@@ -50,7 +50,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: vscode-web
-          key: vscode-web-v7-${{ env.VSCODE_SHA }}-node-${{ hashFiles('vscode/package-lock.json') }}-manifest-${{ hashFiles('browser-fs/package.json') }}
+          key: vscode-web-v8-${{ env.VSCODE_SHA }}-node-${{ hashFiles('vscode/package-lock.json') }}-manifest-${{ hashFiles('browser-fs/package.json') }}
 
       - name: Install native build dependencies
         if: steps.vscode-web-cache.outputs.cache-hit != 'true'
@@ -115,6 +115,40 @@ jobs:
             vscode-web/out/vs/code/browser/workbench/workbench.js
           cp -f out-vscode-web-shell/vs/code/browser/workbench/workbench.css \
             vscode-web/out/vs/code/browser/workbench/workbench.css
+
+      - name: Validate cached VS Code Web
+        id: validate-vscode-web
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -s vscode-web/out/vs/code/browser/workbench/workbench.html ] &&              [ -s vscode-web/out/vs/code/browser/workbench/workbench.js ]; then
+            echo "valid=true" >> "$GITHUB_OUTPUT"
+            echo "Cached VS Code Web shell is valid"
+          else
+            echo "valid=false" >> "$GITHUB_OUTPUT"
+            echo "Cached VS Code Web shell is incomplete; browser shell will be rebuilt"
+          fi
+
+      - name: Repair missing VS Code browser shell
+        if: steps.validate-vscode-web.outputs.valid != 'true'
+        working-directory: vscode
+        run: |
+          set -euo pipefail
+
+          # The web target provides the static client/workbench. If an older
+          # cache contains an incomplete browser shell, rebuild only the shell
+          # instead of rerunning the expensive vscode-web-min build.
+          node build/next/index.ts bundle             --out out-vscode-web-shell             --target server-web             --minify             --nls
+
+          test -s out-vscode-web-shell/vs/code/browser/workbench/workbench.js
+          test -s out-vscode-web-shell/vs/code/browser/workbench/workbench.css
+
+          mkdir -p vscode-web/out/vs/code/browser/workbench
+          cp -f out-vscode-web-shell/vs/code/browser/workbench/workbench.js             vscode-web/out/vs/code/browser/workbench/workbench.js
+          cp -f out-vscode-web-shell/vs/code/browser/workbench/workbench.css             vscode-web/out/vs/code/browser/workbench/workbench.css
+
+          echo "Repaired browser shell:"
+          ls -lh vscode-web/out/vs/code/browser/workbench/workbench.{js,css,html}
 
       - name: Sync current browser filesystem extension
         run: |
