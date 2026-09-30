@@ -43,14 +43,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: vscode/node_modules
-          key: vscode-deps-v1-${{ env.VSCODE_SHA }}-${{ hashFiles('vscode/package-lock.json') }}
+          key: vscode-deps-v2-${{ hashFiles('vscode/package-lock.json') }}
 
       - name: Cache built VS Code Web
         id: vscode-web-cache
         uses: actions/cache@v4
         with:
           path: vscode-web
-          key: vscode-web-v6-${{ env.VSCODE_SHA }}-node-${{ hashFiles('vscode/package-lock.json') }}-fs-${{ hashFiles('browser-fs/**') }}
+          key: vscode-web-v7-${{ env.VSCODE_SHA }}-node-${{ hashFiles('vscode/package-lock.json') }}-manifest-${{ hashFiles('browser-fs/package.json') }}
 
       - name: Install native build dependencies
         if: steps.vscode-web-cache.outputs.cache-hit != 'true'
@@ -115,6 +115,16 @@ jobs:
             vscode-web/out/vs/code/browser/workbench/workbench.js
           cp -f out-vscode-web-shell/vs/code/browser/workbench/workbench.css \
             vscode-web/out/vs/code/browser/workbench/workbench.css
+
+      - name: Sync current browser filesystem extension
+        run: |
+          # The extension's package.json is part of the build cache key, but
+          # extension.js is deliberately not. This lets extension code changes
+          # update the cached VS Code tree without rebuilding VS Code itself.
+          rm -rf vscode-web/extensions/pythonline-browser-fs
+          mkdir -p vscode-web/extensions/pythonline-browser-fs
+          cp browser-fs/package.json vscode-web/extensions/pythonline-browser-fs/package.json
+          cp browser-fs/extension.js vscode-web/extensions/pythonline-browser-fs/extension.js
 
       - name: Prepare GitHub Pages site
         shell: bash
