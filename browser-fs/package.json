@@ -8,7 +8,6 @@
     "vscode": "^1.100.0"
   },
   "browser": "./extension.js",
-  "extensionKind": ["web"],
   "activationEvents": [
     "onFileSystem:pythonline"
   ],
