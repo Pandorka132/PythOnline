@@ -28,9 +28,6 @@ jobs:
           path: vscode
           fetch-depth: 1
 
-      - name: Enable Corepack
-        run: corepack enable
-
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
@@ -38,11 +35,11 @@ jobs:
 
       - name: Install VS Code dependencies
         working-directory: vscode
-        run: yarn --frozen-lockfile
+        run: npm install --no-audit --no-fund
 
       - name: Build and package VS Code Web
         working-directory: vscode
-        run: yarn gulp vscode-web-min
+        run: npm run gulp vscode-web-min
 
       - name: Prepare GitHub Pages site
         shell: bash
