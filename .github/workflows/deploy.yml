@@ -42,8 +42,10 @@ jobs:
         id: vscode-web-cache
         uses: actions/cache@v4
         with:
-          path: vscode-web
-          key: vscode-web-${{ env.VSCODE_SHA }}
+          path: |
+            vscode-web
+            vscode/node_modules
+          key: vscode-web-${{ env.VSCODE_SHA }}-node-${{ hashFiles('vscode/package-lock.json') }}
 
       - name: Install native build dependencies
         if: steps.vscode-web-cache.outputs.cache-hit != 'true'
@@ -54,7 +56,7 @@ jobs:
       - name: Install VS Code dependencies
         if: steps.vscode-web-cache.outputs.cache-hit != 'true'
         working-directory: vscode
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Build and package VS Code Web
         if: steps.vscode-web-cache.outputs.cache-hit != 'true'
@@ -118,7 +120,6 @@ jobs:
           # Recent VS Code web builds package the main stylesheet as
           # workbench.web.main.css; the generated workbench template expects
           # the stable code/browser/workbench/workbench.css route.
-          local css_found
           css_found="$(find site -type f \( \
             -path "*/out/vs/code/browser/workbench/workbench.css" -o \
             -path "*/out/vs/workbench/workbench.web.main.css" \
