@@ -38,14 +38,19 @@ jobs:
       - name: Get VS Code commit
         run: echo "VSCODE_SHA=$(git -C vscode rev-parse HEAD)" >> "$GITHUB_ENV"
 
+      - name: Cache VS Code dependencies
+        id: vscode-deps-cache
+        uses: actions/cache@v4
+        with:
+          path: vscode/node_modules
+          key: vscode-deps-v1-${{ env.VSCODE_SHA }}-${{ hashFiles('vscode/package-lock.json') }}
+
       - name: Cache built VS Code Web
         id: vscode-web-cache
         uses: actions/cache@v4
         with:
-          path: |
-            vscode-web
-            vscode/node_modules
-          key: vscode-web-v4-${{ env.VSCODE_SHA }}-node-${{ hashFiles('vscode/package-lock.json') }}
+          path: vscode-web
+          key: vscode-web-v5-${{ env.VSCODE_SHA }}-node-${{ hashFiles('vscode/package-lock.json') }}-fs-${{ hashFiles('browser-fs/**') }}
 
       - name: Install native build dependencies
         if: steps.vscode-web-cache.outputs.cache-hit != 'true'
@@ -54,7 +59,7 @@ jobs:
           sudo apt-get install -y libkrb5-dev libx11-dev libxkbfile-dev pkg-config
 
       - name: Install VS Code dependencies
-        if: steps.vscode-web-cache.outputs.cache-hit != 'true'
+        if: steps.vscode-deps-cache.outputs.cache-hit != 'true'
         working-directory: vscode
         run: |
           # GitHub Actions runners occasionally reset long npm downloads.
@@ -176,10 +181,15 @@ jobs:
           copy_asset "resources/server/code-512.png" \
             -name "code-512.png"
 
-          # Fail the build instead of deploying a broken Pages artifact.
-          test -s site/out/vs/code/browser/workbench/workbench.css
-          test -s site/out/vs/code/browser/workbench/workbench.js
-          test -s site/resources/server/manifest.json
+          # Verify the exact browser-shell assets before deployment.
+          for asset in site/out/vs/code/browser/workbench/workbench.html site/out/vs/code/browser/workbench/workbench.css site/out/vs/code/browser/workbench/workbench.js site/resources/server/manifest.json; do
+            if [ ! -s "$asset" ]; then
+              echo "Missing or empty required asset: $asset"
+              find site/out/vs/code/browser/workbench -maxdepth 1 -type f -printf '%f %s bytes\\n' 2>/dev/null || true
+              exit 1
+            fi
+            echo "Verified $asset"
+          done
 
           touch site/.nojekyll
 
