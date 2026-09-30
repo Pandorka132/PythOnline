@@ -122,7 +122,7 @@ jobs:
           # the stable code/browser/workbench/workbench.css route.
           css_found="$(find site -type f \( \
             -path "*/out/vs/code/browser/workbench/workbench.css" -o \
-            -path "*/out/vs/workbench/workbench.web.main.css" \
+            -path "*/out/vs/workbench/workbench.web.main*.css" \
           \) -print -quit)"
           if [ -z "$css_found" ]; then
             echo "Missing required VS Code web stylesheet"
