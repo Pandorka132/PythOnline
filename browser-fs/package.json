@@ -1,0 +1,23 @@
+{
+  "name": "pythonline-browser-fs",
+  "displayName": "PythOnline Browser Filesystem",
+  "description": "Persistent browser-backed filesystem for PythOnline.",
+  "version": "0.0.1",
+  "publisher": "Pandorka132",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "browser": "./extension.js",
+  "extensionKind": ["web"],
+  "activationEvents": [
+    "onFileSystem:pythonline"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "pythonline.clearBrowserFilesystem",
+        "title": "PythOnline: Clear Browser Filesystem"
+      }
+    ]
+  }
+}
