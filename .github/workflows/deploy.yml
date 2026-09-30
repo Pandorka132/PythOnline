@@ -82,6 +82,42 @@ jobs:
           
           Path("site/index.html").write_text(index)
           PY
+          # The VS Code web package is normally laid out correctly, but its
+          # static-server resources use server-side routes. Normalize those paths
+          # for GitHub Pages so the browser can load the same files directly.
+          mkdir -p site/resources/server
+
+          copy_asset() {
+            local target="$1"
+            shift
+            local found
+            found="$(find site -type f "$@" -print -quit)"
+            if [ -z "$found" ]; then
+              echo "Missing required VS Code web asset: $target"
+              exit 1
+            fi
+            cp -f "$found" "site/$target"
+            echo "Normalized $target from $found"
+          }
+
+          copy_asset "out/vs/code/browser/workbench/workbench.css" \\
+            -path "*/out/vs/code/browser/workbench/workbench.css"
+          copy_asset "out/vs/code/browser/workbench/workbench.js" \\
+            -path "*/out/vs/code/browser/workbench/workbench.js"
+          copy_asset "resources/server/manifest.json" \\
+            -name "manifest.json"
+          copy_asset "resources/server/favicon.ico" \\
+            -name "favicon.ico"
+          copy_asset "resources/server/code-192.png" \\
+            -name "code-192.png"
+          copy_asset "resources/server/code-512.png" \\
+            -name "code-512.png"
+
+          # Fail the build instead of deploying a broken Pages artifact.
+          test -s site/out/vs/code/browser/workbench/workbench.css
+          test -s site/out/vs/code/browser/workbench/workbench.js
+          test -s site/resources/server/manifest.json
+
           touch site/.nojekyll
 
       - name: Configure Pages
