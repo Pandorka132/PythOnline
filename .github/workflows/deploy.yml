@@ -56,7 +56,31 @@ jobs:
 
           test -f site/out/vs/code/browser/workbench/workbench.html
 
-          cp site/out/vs/code/browser/workbench/workbench.html site/index.html
+          python3 - <<'PY'
+          from pathlib import Path
+          import html
+          
+          template = Path("site/out/vs/code/browser/workbench/workbench.html")
+          index = template.read_text()
+          
+          replacements = {
+              "{{WORKBENCH_WEB_BASE_URL}}": ".",
+              "{{WORKBENCH_NLS_FALLBACK_URL}}": "./out/nls.messages.js",
+              "{{WORKBENCH_NLS_URL}}": "./out/nls.messages.js",
+              "{{WORKBENCH_AUTH_SESSION}}": "",
+              "{{WORKBENCH_WEB_CONFIGURATION}}": html.escape(
+                  '{"productConfiguration":{"enableTelemetry":false},"workspaceUri":{"scheme":"tmp","path":"/default.code-workspace"}}',
+                  quote=True,
+              ),
+          }
+          for key, value in replacements.items():
+              index = index.replace(key, value)
+          
+          if "{{" in index:
+              raise SystemExit("Unresolved VS Code workbench template placeholders remain")
+          
+          Path("site/index.html").write_text(index)
+          PY
           touch site/.nojekyll
 
       - name: Configure Pages
