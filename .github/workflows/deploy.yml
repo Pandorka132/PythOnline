@@ -62,40 +62,6 @@ jobs:
         if: steps.vscode-web-cache.outputs.cache-hit != 'true'
         working-directory: vscode
         run: |
-          # The current VS Code web target emits the internal workbench bundle,
-          # while the shipped browser workbench.html loads the browser shell
-          # at vs/code/browser/workbench/workbench.js. Add that shell as a
-          # second web entry point instead of switching to server-web, so we
-          # keep the normal web-target extension packaging.
-          python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path("build/next/index.ts")
-          s = p.read_text()
-
-          old = """\t\t\tcase 'web':
-\t\t\t\treturn [
-\t\t\t\t\t...workerEntryPoints,
-\t\t\t\t\t...webOnlyEntryPoints,
-\t\t\t\t\t'vs/workbench/workbench.web.main.internal', // web workbench only (no browser shell)
-\t\t\t\t\t...keyboardMapEntryPoints,
-\t\t\t\t];"""
-
-          new = """\t\t\tcase 'web':
-\t\t\t\treturn [
-\t\t\t\t\t...workerEntryPoints,
-\t\t\t\t\t...webOnlyEntryPoints,
-\t\t\t\t\t'vs/workbench/workbench.web.main.internal',
-\t\t\t\t\t'vs/code/browser/workbench/workbench',
-\t\t\t\t\t...keyboardMapEntryPoints,
-\t\t\t\t];"""
-
-          if old not in s:
-              raise SystemExit("VS Code web entry-point block changed; refusing an unsafe patch")
-
-          p.write_text(s.replace(old, new, 1))
-          PY
-
           npm run gulp vscode-web-min
 
       - name: Prepare GitHub Pages site
