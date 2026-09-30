@@ -115,17 +115,17 @@ jobs:
             echo "Normalized $target from $found"
           }
 
-          copy_asset "out/vs/code/browser/workbench/workbench.css" \\
+          copy_asset "out/vs/code/browser/workbench/workbench.css" \
             -path "*/out/vs/code/browser/workbench/workbench.css"
-          copy_asset "out/vs/code/browser/workbench/workbench.js" \\
+          copy_asset "out/vs/code/browser/workbench/workbench.js" \
             -path "*/out/vs/code/browser/workbench/workbench.js"
-          copy_asset "resources/server/manifest.json" \\
+          copy_asset "resources/server/manifest.json" \
             -name "manifest.json"
-          copy_asset "resources/server/favicon.ico" \\
+          copy_asset "resources/server/favicon.ico" \
             -name "favicon.ico"
-          copy_asset "resources/server/code-192.png" \\
+          copy_asset "resources/server/code-192.png" \
             -name "code-192.png"
-          copy_asset "resources/server/code-512.png" \\
+          copy_asset "resources/server/code-512.png" \
             -name "code-512.png"
 
           # Fail the build instead of deploying a broken Pages artifact.
