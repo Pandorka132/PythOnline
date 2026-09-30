@@ -45,7 +45,7 @@ jobs:
           path: |
             vscode-web
             vscode/node_modules
-          key: vscode-web-v3-${{ env.VSCODE_SHA }}-node-${{ hashFiles('vscode/package-lock.json') }}-fs-${{ hashFiles('browser-fs/**') }}
+          key: vscode-web-v4-${{ env.VSCODE_SHA }}-node-${{ hashFiles('vscode/package-lock.json') }}
 
       - name: Install native build dependencies
         if: steps.vscode-web-cache.outputs.cache-hit != 'true'
