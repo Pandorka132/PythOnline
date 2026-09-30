@@ -115,8 +115,21 @@ jobs:
             echo "Normalized $target from $found"
           }
 
-          copy_asset "out/vs/code/browser/workbench/workbench.css" \
-            -path "*/out/vs/code/browser/workbench/workbench.css"
+          # Recent VS Code web builds package the main stylesheet as
+          # workbench.web.main.css; the generated workbench template expects
+          # the stable code/browser/workbench/workbench.css route.
+          local css_found
+          css_found="$(find site -type f \( \
+            -path "*/out/vs/code/browser/workbench/workbench.css" -o \
+            -path "*/out/vs/workbench/workbench.web.main.css" \
+          \) -print -quit)"
+          if [ -z "$css_found" ]; then
+            echo "Missing required VS Code web stylesheet"
+            find site -type f -name '*.css' | head -50
+            exit 1
+          fi
+          cp -f "$css_found" "site/out/vs/code/browser/workbench/workbench.css"
+          echo "Normalized workbench.css from $css_found"
           copy_asset "out/vs/code/browser/workbench/workbench.js" \
             -path "*/out/vs/code/browser/workbench/workbench.js"
           copy_asset "resources/server/manifest.json" \
