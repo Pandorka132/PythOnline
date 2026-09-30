@@ -35,8 +35,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version-file: vscode/.nvmrc
-          cache: yarn
-          cache-dependency-path: vscode/yarn.lock
 
       - name: Install VS Code dependencies
         working-directory: vscode
