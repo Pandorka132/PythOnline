@@ -45,7 +45,7 @@ jobs:
           path: |
             vscode-web
             vscode/node_modules
-          key: vscode-web-${{ env.VSCODE_SHA }}-node-${{ hashFiles('vscode/package-lock.json') }}
+          key: vscode-web-v3-${{ env.VSCODE_SHA }}-node-${{ hashFiles('vscode/package-lock.json') }}-fs-${{ hashFiles('browser-fs/**') }}
 
       - name: Install native build dependencies
         if: steps.vscode-web-cache.outputs.cache-hit != 'true'
@@ -83,6 +83,13 @@ jobs:
         if: steps.vscode-web-cache.outputs.cache-hit != 'true'
         working-directory: vscode
         run: |
+          # Add the PythOnline browser filesystem as a built-in web extension.
+          # VS Code's web build packages every local extension under extensions/.
+          rm -rf extensions/pythonline-browser-fs
+          mkdir -p extensions/pythonline-browser-fs
+          cp ../browser-fs/package.json extensions/pythonline-browser-fs/package.json
+          cp ../browser-fs/extension.js extensions/pythonline-browser-fs/extension.js
+
           # vscode-web-min intentionally uses the "web" build target. That target
           # contains the web workbench but deliberately does NOT emit the browser
           # shell at vs/code/browser/workbench/workbench.js.
@@ -95,6 +102,14 @@ jobs:
             --target server-web \
             --minify \
             --nls
+
+          # Make the cached vscode-web artifact self-contained: the browser shell
+          # is produced by server-web, while the rest of the package comes from web.
+          mkdir -p vscode-web/out/vs/code/browser/workbench
+          cp -f out-vscode-web-shell/vs/code/browser/workbench/workbench.js \
+            vscode-web/out/vs/code/browser/workbench/workbench.js
+          cp -f out-vscode-web-shell/vs/code/browser/workbench/workbench.css \
+            vscode-web/out/vs/code/browser/workbench/workbench.css
 
       - name: Prepare GitHub Pages site
         shell: bash
@@ -120,7 +135,7 @@ jobs:
               "{{WORKBENCH_AUTH_SESSION}}": "",
               "{{WORKBENCH_SCRIPT_NONCE}}": "",
               "{{WORKBENCH_WEB_CONFIGURATION}}": html.escape(
-                  '{"productConfiguration":{"enableTelemetry":false},"workspaceUri":{"scheme":"tmp","path":"/default.code-workspace"}}',
+                  '{"productConfiguration":{"enableTelemetry":false},"workspaceUri":{"scheme":"pythonline","path":"/workspace"}}',
                   quote=True,
               ),
           }
@@ -150,27 +165,8 @@ jobs:
             echo "Normalized $target from $found"
           }
 
-          # The "web" target deliberately omits the browser shell.
-          # server-web is used only to produce these two client entry assets.
-          shell_js="vscode/out-vscode-web-shell/vs/code/browser/workbench/workbench.js"
-          shell_css="vscode/out-vscode-web-shell/vs/code/browser/workbench/workbench.css"
-
-          if [ ! -s "$shell_js" ]; then
-            echo "Missing browser workbench shell: $shell_js"
-            find vscode/out-vscode-web-shell -path '*vs/code/browser/workbench*' -type f | head -50 || true
-            exit 1
-          fi
-
-          if [ ! -s "$shell_css" ]; then
-            echo "Missing browser workbench stylesheet: $shell_css"
-            find vscode/out-vscode-web-shell -path '*vs/code/browser/workbench*' -type f | head -50 || true
-            exit 1
-          fi
-
-          mkdir -p site/out/vs/code/browser/workbench
-          cp -f "$shell_js" "site/out/vs/code/browser/workbench/workbench.js"
-          cp -f "$shell_css" "site/out/vs/code/browser/workbench/workbench.css"
-          echo "Copied browser shell assets from server-web bundle"
+          # The browser shell was copied into vscode-web during the build step,
+          # so it is also present on cache hits.
           copy_asset "resources/server/manifest.json" \
             -name "manifest.json"
           copy_asset "resources/server/favicon.ico" \
