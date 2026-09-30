@@ -62,7 +62,18 @@ jobs:
         if: steps.vscode-web-cache.outputs.cache-hit != 'true'
         working-directory: vscode
         run: |
+          # vscode-web-min intentionally uses the "web" build target. That target
+          # contains the web workbench but deliberately does NOT emit the browser
+          # shell at vs/code/browser/workbench/workbench.js.
           npm run gulp vscode-web-min
+
+          # Build the browser shell with the "server-web" target. We only copy
+          # its browser entry assets into the static client package.
+          node build/next/index.ts bundle \
+            --out out-vscode-web-shell \
+            --target server-web \
+            --minify \
+            --nls
 
       - name: Prepare GitHub Pages site
         shell: bash
@@ -118,22 +129,27 @@ jobs:
             echo "Normalized $target from $found"
           }
 
-          # Recent VS Code web builds package the main stylesheet as
-          # workbench.web.main.css; the generated workbench template expects
-          # the stable code/browser/workbench/workbench.css route.
-          css_found="$(find site -type f \( \
-            -path "*/out/vs/code/browser/workbench/workbench.css" -o \
-            -path "*/out/vs/workbench/workbench.web.main*.css" \
-          \) -print -quit)"
-          if [ -z "$css_found" ]; then
-            echo "Missing required VS Code web stylesheet"
-            find site -type f -name '*.css' | head -50
+          # The "web" target deliberately omits the browser shell.
+          # server-web is used only to produce these two client entry assets.
+          shell_js="vscode/out-vscode-web-shell/vs/code/browser/workbench/workbench.js"
+          shell_css="vscode/out-vscode-web-shell/vs/code/browser/workbench/workbench.css"
+
+          if [ ! -s "$shell_js" ]; then
+            echo "Missing browser workbench shell: $shell_js"
+            find vscode/out-vscode-web-shell -path '*vs/code/browser/workbench*' -type f | head -50 || true
             exit 1
           fi
-          cp -f "$css_found" "site/out/vs/code/browser/workbench/workbench.css"
-          echo "Normalized workbench.css from $css_found"
-          copy_asset "out/vs/code/browser/workbench/workbench.js" \
-            -path "*/out/vs/code/browser/workbench/workbench.js"
+
+          if [ ! -s "$shell_css" ]; then
+            echo "Missing browser workbench stylesheet: $shell_css"
+            find vscode/out-vscode-web-shell -path '*vs/code/browser/workbench*' -type f | head -50 || true
+            exit 1
+          fi
+
+          mkdir -p site/out/vs/code/browser/workbench
+          cp -f "$shell_js" "site/out/vs/code/browser/workbench/workbench.js"
+          cp -f "$shell_css" "site/out/vs/code/browser/workbench/workbench.css"
+          echo "Copied browser shell assets from server-web bundle"
           copy_asset "resources/server/manifest.json" \
             -name "manifest.json"
           copy_asset "resources/server/favicon.ico" \
