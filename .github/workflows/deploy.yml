@@ -42,44 +42,22 @@ jobs:
         working-directory: vscode
         run: yarn --frozen-lockfile
 
-      - name: Build VS Code Web
+      - name: Build and package VS Code Web
         working-directory: vscode
         run: yarn gulp vscode-web-min
 
-      - name: Prepare static site
+      - name: Prepare GitHub Pages site
         shell: bash
         run: |
           set -euo pipefail
           rm -rf site
           mkdir -p site
-          cp -a vscode/out-vscode-web-min/. site/
+          cp -a vscode-web/. site/
 
-          python3 - <<'PY'
-          from pathlib import Path
+          test -f site/out/vs/code/browser/workbench/workbench.html
 
-          root = Path("site")
-          candidates = [
-              root / "workbench.html",
-              root / "vs/code/browser/workbench/workbench.html",
-          ]
-          template = next((p for p in candidates if p.exists()), None)
-          if template is None:
-              raise SystemExit("Could not find VS Code workbench.html in the web build")
-
-          html = template.read_text()
-          replacements = {
-              "{{WORKBENCH_WEB_BASE_URL}}": ".",
-              "{{WORKBENCH_WEB_CONFIGURATION}}": "{}",
-              "{{WORKBENCH_BUILTIN_EXTENSIONS}}": "[]",
-              "{{WORKBENCH_AUTH_SESSION}}": "null",
-          }
-          for old, new in replacements.items():
-              html = html.replace(old, new)
-
-          (root / "index.html").write_text(html)
-          (root / ".nojekyll").write_text("")
-          print("Using workbench template:", template)
-          PY
+          cp site/out/vs/code/browser/workbench/workbench.html site/index.html
+          touch site/.nojekyll
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
