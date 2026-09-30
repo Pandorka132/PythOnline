@@ -50,7 +50,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: vscode-web
-          key: vscode-web-v8-${{ env.VSCODE_SHA }}-node-${{ hashFiles('vscode/package-lock.json') }}-manifest-${{ hashFiles('browser-fs/package.json') }}
+          key: vscode-web-v9-${{ env.VSCODE_SHA }}-node-${{ hashFiles('vscode/package-lock.json') }}-manifest-${{ hashFiles('browser-fs/package.json') }}
 
       - name: Install native build dependencies
         if: steps.vscode-web-cache.outputs.cache-hit != 'true'
@@ -62,71 +62,54 @@ jobs:
         if: steps.vscode-deps-cache.outputs.cache-hit != 'true'
         working-directory: vscode
         run: |
-          # GitHub Actions runners occasionally reset long npm downloads.
-          # Make npm retry transient registry/network failures instead of
-          # failing the whole VS Code build on the first ECONNRESET.
           npm config set fetch-retries 5
           npm config set fetch-retry-mintimeout 20000
           npm config set fetch-retry-maxtimeout 120000
           npm config set fetch-timeout 300000
-
           for attempt in 1 2 3; do
             echo "npm ci attempt $attempt/3"
-            if npm ci --no-audit --no-fund --prefer-offline; then
-              exit 0
-            fi
-            if [ "$attempt" -lt 3 ]; then
-              echo "npm ci failed; retrying after a short delay..."
-              sleep 10
-            fi
+            if npm ci --no-audit --no-fund --prefer-offline; then exit 0; fi
+            if [ "$attempt" -lt 3 ]; then sleep 10; fi
           done
-
-          echo "npm ci failed after 3 attempts"
           exit 1
 
       - name: Build and package VS Code Web
         if: steps.vscode-web-cache.outputs.cache-hit != 'true'
         working-directory: vscode
         run: |
-          # Add the PythOnline browser filesystem as a built-in web extension.
-          # VS Code's web build packages every local extension under extensions/.
           rm -rf extensions/pythonline-browser-fs
           mkdir -p extensions/pythonline-browser-fs
           cp ../browser-fs/package.json extensions/pythonline-browser-fs/package.json
           cp ../browser-fs/extension.js extensions/pythonline-browser-fs/extension.js
 
-          # vscode-web-min intentionally uses the "web" build target. That target
-          # contains the web workbench but deliberately does NOT emit the browser
-          # shell at vs/code/browser/workbench/workbench.js.
           npm run gulp vscode-web-min
 
-          # Build the browser shell with the "server-web" target. We only copy
-          # its browser entry assets into the static client package.
           node build/next/index.ts bundle \
             --out out-vscode-web-shell \
             --target server-web \
             --minify \
             --nls
 
-          # Make the cached vscode-web artifact self-contained: the browser shell
-          # is produced by server-web, while the rest of the package comes from web.
+          test -s out-vscode-web-shell/vs/code/browser/workbench/workbench.js
+
           mkdir -p vscode-web/out/vs/code/browser/workbench
           cp -f out-vscode-web-shell/vs/code/browser/workbench/workbench.js \
             vscode-web/out/vs/code/browser/workbench/workbench.js
-          cp -f out-vscode-web-shell/vs/code/browser/workbench/workbench.css \
-            vscode-web/out/vs/code/browser/workbench/workbench.css
 
       - name: Validate cached VS Code Web
         id: validate-vscode-web
         shell: bash
         run: |
           set -euo pipefail
-          if [ -s vscode-web/out/vs/code/browser/workbench/workbench.html ] &&              [ -s vscode-web/out/vs/code/browser/workbench/workbench.js ]; then
+          # server-web produces the browser shell JS, but NOT workbench.html.
+          # workbench.html belongs to the normal vscode-web build.
+          if [ -s vscode-web/out/vs/code/browser/workbench/workbench.js ] && \
+             [ -s vscode-web/out/vs/code/browser/workbench/workbench.html ]; then
             echo "valid=true" >> "$GITHUB_OUTPUT"
             echo "Cached VS Code Web shell is valid"
           else
             echo "valid=false" >> "$GITHUB_OUTPUT"
-            echo "Cached VS Code Web shell is incomplete; browser shell will be rebuilt"
+            echo "Cached VS Code Web shell is incomplete"
           fi
 
       - name: Repair missing VS Code browser shell
@@ -135,26 +118,27 @@ jobs:
         run: |
           set -euo pipefail
 
-          # The web target provides the static client/workbench. If an older
-          # cache contains an incomplete browser shell, rebuild only the shell
-          # instead of rerunning the expensive vscode-web-min build.
-          node build/next/index.ts bundle             --out out-vscode-web-shell             --target server-web             --minify             --nls
+          # If only the server-web browser shell JS is missing, rebuild that
+          # shell. Do not expect server-web to produce workbench.html.
+          node build/next/index.ts bundle \
+            --out out-vscode-web-shell \
+            --target server-web \
+            --minify \
+            --nls
 
           test -s out-vscode-web-shell/vs/code/browser/workbench/workbench.js
-          test -s out-vscode-web-shell/vs/code/browser/workbench/workbench.css
 
           mkdir -p vscode-web/out/vs/code/browser/workbench
-          cp -f out-vscode-web-shell/vs/code/browser/workbench/workbench.js             vscode-web/out/vs/code/browser/workbench/workbench.js
-          cp -f out-vscode-web-shell/vs/code/browser/workbench/workbench.css             vscode-web/out/vs/code/browser/workbench/workbench.css
+          cp -f out-vscode-web-shell/vs/code/browser/workbench/workbench.js \
+            vscode-web/out/vs/code/browser/workbench/workbench.js
 
+          test -s vscode-web/out/vs/code/browser/workbench/workbench.html
+          test -s vscode-web/out/vs/code/browser/workbench/workbench.js
           echo "Repaired browser shell:"
-          ls -lh vscode-web/out/vs/code/browser/workbench/workbench.{js,css,html}
+          ls -lh vscode-web/out/vs/code/browser/workbench/workbench.js
 
       - name: Sync current browser filesystem extension
         run: |
-          # The extension's package.json is part of the build cache key, but
-          # extension.js is deliberately not. This lets extension code changes
-          # update the cached VS Code tree without rebuilding VS Code itself.
           rm -rf vscode-web/extensions/pythonline-browser-fs
           mkdir -p vscode-web/extensions/pythonline-browser-fs
           cp browser-fs/package.json vscode-web/extensions/pythonline-browser-fs/package.json
@@ -173,10 +157,8 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import html
-          
           template = Path("site/out/vs/code/browser/workbench/workbench.html")
           index = template.read_text()
-          
           replacements = {
               "{{WORKBENCH_WEB_BASE_URL}}": ".",
               "{{WORKBENCH_NLS_FALLBACK_URL}}": "./out/nls.messages.js",
@@ -190,15 +172,11 @@ jobs:
           }
           for key, value in replacements.items():
               index = index.replace(key, value)
-          
           if "{{" in index:
               raise SystemExit("Unresolved VS Code workbench template placeholders remain")
-          
           Path("site/index.html").write_text(index)
           PY
-          # The VS Code web package is normally laid out correctly, but its
-          # static-server resources use server-side routes. Normalize those paths
-          # for GitHub Pages so the browser can load the same files directly.
+
           mkdir -p site/resources/server
 
           copy_asset() {
@@ -214,34 +192,25 @@ jobs:
             echo "Normalized $target from $found"
           }
 
-          # The web workbench CSS is emitted by the "web" target under
-          # vs/workbench, while the browser shell HTML/JS lives under
-          # vs/code/browser/workbench. Normalize the CSS into the path expected
-          # by workbench.html on every run, including cache hits.
           css_found="$(find site/out/vs/workbench -type f -name 'workbench.web.main*.css' -print -quit 2>/dev/null || true)"
           if [ -z "$css_found" ]; then
             echo "Missing VS Code web workbench CSS"
-            find site/out/vs -maxdepth 4 -type f -name '*.css' -printf '%p %s bytes\\n' 2>/dev/null | head -50 || true
+            find site/out/vs -maxdepth 4 -type f -name '*.css' -printf '%p %s bytes\n' 2>/dev/null | head -50 || true
             exit 1
           fi
           mkdir -p site/out/vs/code/browser/workbench
           cp -f "$css_found" site/out/vs/code/browser/workbench/workbench.css
           echo "Normalized out/vs/code/browser/workbench/workbench.css from $css_found"
 
-          copy_asset "resources/server/manifest.json" \
-            -name "manifest.json"
-          copy_asset "resources/server/favicon.ico" \
-            -name "favicon.ico"
-          copy_asset "resources/server/code-192.png" \
-            -name "code-192.png"
-          copy_asset "resources/server/code-512.png" \
-            -name "code-512.png"
+          copy_asset "resources/server/manifest.json" -name "manifest.json"
+          copy_asset "resources/server/favicon.ico" -name "favicon.ico"
+          copy_asset "resources/server/code-192.png" -name "code-192.png"
+          copy_asset "resources/server/code-512.png" -name "code-512.png"
 
-          # Verify the exact browser-shell assets before deployment.
           for asset in site/out/vs/code/browser/workbench/workbench.html site/out/vs/code/browser/workbench/workbench.css site/out/vs/code/browser/workbench/workbench.js site/resources/server/manifest.json; do
             if [ ! -s "$asset" ]; then
               echo "Missing or empty required asset: $asset"
-              find site/out/vs/code/browser/workbench -maxdepth 1 -type f -printf '%f %s bytes\\n' 2>/dev/null || true
+              find site/out/vs/code/browser/workbench -maxdepth 1 -type f -printf '%f %s bytes\n' 2>/dev/null || true
               exit 1
             fi
             echo "Verified $asset"
