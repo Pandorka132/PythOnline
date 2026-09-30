@@ -108,7 +108,7 @@ jobs:
             local target="$1"
             shift
             local found
-            found="$(find site -type f "$@" -print -quit)"
+            found="$(find site \( -type f -o -type l \) "$@" -print -quit)"
             if [ -z "$found" ]; then
               echo "Missing required VS Code web asset: $target"
               exit 1
