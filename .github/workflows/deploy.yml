@@ -68,6 +68,7 @@ jobs:
               "{{WORKBENCH_NLS_FALLBACK_URL}}": "./out/nls.messages.js",
               "{{WORKBENCH_NLS_URL}}": "./out/nls.messages.js",
               "{{WORKBENCH_AUTH_SESSION}}": "",
+              "{{WORKBENCH_SCRIPT_NONCE}}": "",
               "{{WORKBENCH_WEB_CONFIGURATION}}": html.escape(
                   '{"productConfiguration":{"enableTelemetry":false},"workspaceUri":{"scheme":"tmp","path":"/default.code-workspace"}}',
                   quote=True,
