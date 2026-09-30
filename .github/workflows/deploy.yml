@@ -50,7 +50,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: vscode-web
-          key: vscode-web-v5-${{ env.VSCODE_SHA }}-node-${{ hashFiles('vscode/package-lock.json') }}-fs-${{ hashFiles('browser-fs/**') }}
+          key: vscode-web-v6-${{ env.VSCODE_SHA }}-node-${{ hashFiles('vscode/package-lock.json') }}-fs-${{ hashFiles('browser-fs/**') }}
 
       - name: Install native build dependencies
         if: steps.vscode-web-cache.outputs.cache-hit != 'true'
@@ -170,8 +170,20 @@ jobs:
             echo "Normalized $target from $found"
           }
 
-          # The browser shell was copied into vscode-web during the build step,
-          # so it is also present on cache hits.
+          # The web workbench CSS is emitted by the "web" target under
+          # vs/workbench, while the browser shell HTML/JS lives under
+          # vs/code/browser/workbench. Normalize the CSS into the path expected
+          # by workbench.html on every run, including cache hits.
+          css_found="$(find site/out/vs/workbench -type f -name 'workbench.web.main*.css' -print -quit 2>/dev/null || true)"
+          if [ -z "$css_found" ]; then
+            echo "Missing VS Code web workbench CSS"
+            find site/out/vs -maxdepth 4 -type f -name '*.css' -printf '%p %s bytes\\n' 2>/dev/null | head -50 || true
+            exit 1
+          fi
+          mkdir -p site/out/vs/code/browser/workbench
+          cp -f "$css_found" site/out/vs/code/browser/workbench/workbench.css
+          echo "Normalized out/vs/code/browser/workbench/workbench.css from $css_found"
+
           copy_asset "resources/server/manifest.json" \
             -name "manifest.json"
           copy_asset "resources/server/favicon.ico" \
