@@ -1,0 +1,101 @@
+name: Deploy VS Code Web
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PythOnline
+        uses: actions/checkout@v4
+
+      - name: Checkout VS Code
+        uses: actions/checkout@v4
+        with:
+          repository: microsoft/vscode
+          path: vscode
+          fetch-depth: 1
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: vscode/.nvmrc
+          cache: yarn
+          cache-dependency-path: vscode/yarn.lock
+
+      - name: Install VS Code dependencies
+        working-directory: vscode
+        run: yarn --frozen-lockfile
+
+      - name: Build VS Code Web
+        working-directory: vscode
+        run: yarn gulp vscode-web-min
+
+      - name: Prepare static site
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf site
+          mkdir -p site
+          cp -a vscode/out-vscode-web-min/. site/
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path("site")
+          candidates = [
+              root / "workbench.html",
+              root / "vs/code/browser/workbench/workbench.html",
+          ]
+          template = next((p for p in candidates if p.exists()), None)
+          if template is None:
+              raise SystemExit("Could not find VS Code workbench.html in the web build")
+
+          html = template.read_text()
+          replacements = {
+              "{{WORKBENCH_WEB_BASE_URL}}": ".",
+              "{{WORKBENCH_WEB_CONFIGURATION}}": "{}",
+              "{{WORKBENCH_BUILTIN_EXTENSIONS}}": "[]",
+              "{{WORKBENCH_AUTH_SESSION}}": "null",
+          }
+          for old, new in replacements.items():
+              html = html.replace(old, new)
+
+          (root / "index.html").write_text(html)
+          (root / ".nojekyll").write_text("")
+          print("Using workbench template:", template)
+          PY
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
