@@ -56,7 +56,28 @@ jobs:
       - name: Install VS Code dependencies
         if: steps.vscode-web-cache.outputs.cache-hit != 'true'
         working-directory: vscode
-        run: npm ci --no-audit --no-fund
+        run: |
+          # GitHub Actions runners occasionally reset long npm downloads.
+          # Make npm retry transient registry/network failures instead of
+          # failing the whole VS Code build on the first ECONNRESET.
+          npm config set fetch-retries 5
+          npm config set fetch-retry-mintimeout 20000
+          npm config set fetch-retry-maxtimeout 120000
+          npm config set fetch-timeout 300000
+
+          for attempt in 1 2 3; do
+            echo "npm ci attempt $attempt/3"
+            if npm ci --no-audit --no-fund --prefer-offline; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "npm ci failed; retrying after a short delay..."
+              sleep 10
+            fi
+          done
+
+          echo "npm ci failed after 3 attempts"
+          exit 1
 
       - name: Build and package VS Code Web
         if: steps.vscode-web-cache.outputs.cache-hit != 'true'
