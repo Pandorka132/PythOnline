@@ -185,6 +185,11 @@ async function createSession() {
   const files = {};
   for (const [path, data] of Object.entries(tree.files)) files[path] = data;
   backing = memoryFs(files);
+  try {
+    backing.mkdirSync('/workspace');
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error;
+  }
   for (const dir of tree.directories.sort((a, b) => a.length - b.length)) {
     try {
       backing.mkdirSync(dir);
