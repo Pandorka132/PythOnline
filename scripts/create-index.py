@@ -5,7 +5,7 @@ import json
 
 root = Path(__file__).resolve().parents[1]
 site = root / "site"
-template = site / "out/vs/code/browser/workbench/workbench.html"
+template = site / "vs/code/browser/workbench/workbench.html"
 output = site / "index.html"
 
 if not template.is_file():
@@ -20,8 +20,8 @@ text = template.read_text(encoding="utf-8")
 
 replacements = {
     "{{WORKBENCH_WEB_BASE_URL}}": ".",
-    "{{WORKBENCH_NLS_FALLBACK_URL}}": "./out/nls.messages.js",
-    "{{WORKBENCH_NLS_URL}}": "./out/nls.messages.js",
+    "{{WORKBENCH_NLS_FALLBACK_URL}}": "./nls.messages.js",
+    "{{WORKBENCH_NLS_URL}}": "./nls.messages.js",
     "{{WORKBENCH_AUTH_SESSION}}": "",
     "{{WORKBENCH_SCRIPT_NONCE}}": "",
     "{{WORKBENCH_WEB_CONFIGURATION}}": html.escape(
