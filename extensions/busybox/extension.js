@@ -213,7 +213,7 @@ async function createSession() {
     '  self.postMessage({ type: "worker-bootstrap-error",',
     '    message: error?.stack || error?.message || String(error) });',
     '});'
-  ].join('\\n');
+  ].join('\n');
 
   const workerBlob = new Blob([workerBootstrap], { type: 'text/javascript' });
   const workerBlobUrl = URL.createObjectURL(workerBlob);
