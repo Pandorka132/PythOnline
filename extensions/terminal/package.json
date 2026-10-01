@@ -1,0 +1,19 @@
+{
+  "name": "pythonline-terminal",
+  "displayName": "PythOnline Terminal",
+  "description": "Terminal for the PythOnline browser workspace.",
+  "version": "0.1.0",
+  "publisher": "Pandorka132",
+  "engines": { "vscode": "^1.100.0" },
+  "browser": "./extension.js",
+  "activationEvents": ["*"],
+  "contributes": {
+    "commands": [
+      {
+        "command": "pythonline.openTerminal",
+        "title": "PythOnline: Open Terminal",
+        "icon": "$(terminal)"
+      }
+    ]
+  }
+}
