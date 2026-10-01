@@ -1,7 +1,7 @@
 {
-  "name": "pythonline-terminal",
-  "displayName": "PythOnline Terminal",
-  "description": "Terminal for the PythOnline browser workspace.",
+  "name": "busybox",
+  "displayName": "BusyBox",
+  "description": "BusyBox terminal for the PythOnline browser workspace.",
   "version": "0.1.0",
   "publisher": "Pandorka132",
   "engines": { "vscode": "^1.100.0" },
@@ -10,8 +10,8 @@
   "contributes": {
     "commands": [
       {
-        "command": "pythonline.openTerminal",
-        "title": "PythOnline: Open Terminal",
+        "command": "busybox.open",
+        "title": "BusyBox: Open Terminal",
         "icon": "$(terminal)"
       }
     ]
