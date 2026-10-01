@@ -3,8 +3,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VSCODE="$ROOT/vscode"
-OUT="$ROOT/out-pythonline"
-OUT_REL="../out-pythonline"
+OUT="$VSCODE/out-pythonline"
+OUT_REL="out-pythonline"
 SITE="$ROOT/site"
 
 if [ ! -d "$VSCODE" ]; then
@@ -12,12 +12,12 @@ if [ ! -d "$VSCODE" ]; then
   exit 1
 fi
 
-if [ ! -f "$ROOT/browser-fs/package.json" ] || [ ! -f "$ROOT/browser-fs/extension.js" ]; then
+if [ ! -f "$ROOT/extensions/browser-fs/package.json" ] || [ ! -f "$ROOT/extensions/browser-fs/extension.js" ]; then
   echo "Missing browser-fs extension"
   exit 1
 fi
 
-if [ ! -f "$ROOT/pyodide-runtime/package.json" ] || [ ! -f "$ROOT/pyodide-runtime/extension.js" ] || [ ! -f "$ROOT/pyodide-runtime/worker.js" ]; then
+if [ ! -f "$ROOT/extensions/pyodide-runtime/package.json" ] || [ ! -f "$ROOT/extensions/pyodide-runtime/extension.js" ] || [ ! -f "$ROOT/extensions/pyodide-runtime/worker.js" ]; then
   echo "Missing Pyodide runtime extension"
   exit 1
 fi
@@ -58,10 +58,10 @@ mkdir -p "$SITE/extensions"
 cp -a "$VSCODE/.build/extensions/." "$SITE/extensions/"
 
 mkdir -p "$SITE/extensions/pythonline-browser-fs"
-cp -a "$ROOT/browser-fs/." "$SITE/extensions/pythonline-browser-fs/"
+cp -a "$ROOT/extensions/browser-fs/." "$SITE/extensions/pythonline-browser-fs/"
 
 mkdir -p "$SITE/extensions/pythonline-pyodide-runtime"
-cp -a "$ROOT/pyodide-runtime/." "$SITE/extensions/pythonline-pyodide-runtime/"
+cp -a "$ROOT/extensions/pyodide-runtime/." "$SITE/extensions/pythonline-pyodide-runtime/"
 
 python3 "$ROOT/scripts/create-index.py"
 
