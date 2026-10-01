@@ -84,9 +84,9 @@ echo "==> Validating output"
 required=(
   "$SITE/index.html"
   "$SITE/out/nls.messages.js"
-  "$SITE/vs/code/browser/workbench/workbench.html"
-  "$SITE/vs/code/browser/workbench/workbench.js"
-  "$SITE/vs/code/browser/workbench/workbench.css"
+  "$SITE/out/vs/code/browser/workbench/workbench.html"
+  "$SITE/out/vs/code/browser/workbench/workbench.js"
+  "$SITE/out/vs/code/browser/workbench/workbench.css"
   "$SITE/resources/server/manifest.json"
   "$SITE/resources/server/favicon.ico"
 )
