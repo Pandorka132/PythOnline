@@ -215,7 +215,6 @@ async function createSession() {
   // PythOnline CSP, while this classic worker can dynamically import the ESM
   // WASI-SH worker module.
   worker = new Worker(workerBootstrapUrl);
-  worker.postMessage({ type: 'load', url: workerModuleUrl });
 
   await new Promise((resolve, reject) => {
     const onMessage = (event) => {
@@ -236,6 +235,9 @@ async function createSession() {
     };
     worker.addEventListener('message', onMessage);
     worker.addEventListener('error', onError);
+    // Install listeners before sending the bootstrap message so a very fast
+    // worker cannot race past the readiness/error notification.
+    worker.postMessage({ type: 'load', url: workerModuleUrl });
   });
 
   worker.addEventListener('error', (event) => {
