@@ -85,21 +85,23 @@ class BrowserFileSystemProvider {
   }
 
   async ensureRoot() {
-    const tx = this.db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const root = await request(store.get(ROOT));
-    if (!root) {
-      const now = Date.now();
-      store.put({
-        path: ROOT,
-        type: 'directory',
-        ctime: now,
-        mtime: now,
-        size: 0
-      });
-    } else if (root.type !== 'directory') {
-      throw new Error('PythOnline filesystem root is not a directory');
+    const existing = await this.get(ROOT);
+    if (existing) {
+      if (existing.type !== 'directory') {
+        throw new Error('PythOnline filesystem root is not a directory');
+      }
+      return;
     }
+
+    const now = Date.now();
+    const tx = this.db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put({
+      path: ROOT,
+      type: 'directory',
+      ctime: now,
+      mtime: now,
+      size: 0
+    });
     await transactionDone(tx);
   }
 
@@ -129,8 +131,7 @@ class BrowserFileSystemProvider {
     if (!directory) throw vscode.FileSystemError.FileNotFound(uri);
     if (directory.type !== 'directory') throw vscode.FileSystemError.FileNotADirectory(uri);
 
-    const tx = this.db.transaction(STORE_NAME, 'readonly');
-    const entries = await request(tx.objectStore(STORE_NAME).getAll());
+    const entries = await request(this.db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).getAll());
     const prefix = path === '/' ? '/' : path + '/';
     const result = [];
     for (const entry of entries) {
@@ -236,9 +237,9 @@ class BrowserFileSystemProvider {
       if (children.length) throw vscode.FileSystemError.FileNotFound(uri);
     }
 
+    const all = await request(this.db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).getAll());
     const tx = this.db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
-    const all = await request(store.getAll());
     const targets = all
       .filter(candidate => candidate.path === path || isChildOf(candidate.path, path))
       .map(candidate => candidate.path);
@@ -265,9 +266,9 @@ class BrowserFileSystemProvider {
     const destination = await this.get(newPath);
     if (destination && !options.overwrite) throw vscode.FileSystemError.FileExists(newUri);
 
+    const all = await request(this.db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).getAll());
     const tx = this.db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
-    const all = await request(store.getAll());
     const moved = all.filter(entry => entry.path === oldPath || isChildOf(entry.path, oldPath));
 
     if (destination) {
@@ -304,9 +305,9 @@ class BrowserFileSystemProvider {
     const destination = await this.get(destinationPath);
     if (destination && !options.overwrite) throw vscode.FileSystemError.FileExists(destinationUri);
 
+    const all = await request(this.db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).getAll());
     const tx = this.db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
-    const all = await request(store.getAll());
 
     if (destination) {
       for (const entry of all) {
