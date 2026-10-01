@@ -80,12 +80,15 @@ if [ ! -f "$XTERM_JS" ]; then
   echo "Missing xterm.js runtime asset: $XTERM_JS"
   exit 1
 fi
-mkdir -p "$SITE/node_modules/@xterm/xterm/lib"
-cp "$XTERM_JS" "$SITE/node_modules/@xterm/xterm/lib/xterm.js"
-if [ -f "$XTERM_CSS" ]; then
-  mkdir -p "$SITE/node_modules/@xterm/xterm/css"
-  cp "$XTERM_CSS" "$SITE/node_modules/@xterm/xterm/css/xterm.css"
-fi
+mkdir -p "$SITE/node_modules"
+# server-web may load xterm addons directly by package path, so copy the
+# complete browser-side @xterm packages used by VS Code's terminal UI.
+for package in xterm addon-unicode11 addon-clipboard addon-progress addon-webgl; do
+  if [ -d "$VSCODE/node_modules/@xterm/$package" ]; then
+    mkdir -p "$SITE/node_modules/@xterm"
+    cp -a "$VSCODE/node_modules/@xterm/$package" "$SITE/node_modules/@xterm/"
+  fi
+done
 
 python3 "$ROOT/scripts/create-index.py"
 
