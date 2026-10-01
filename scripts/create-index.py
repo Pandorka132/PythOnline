@@ -47,6 +47,11 @@ configuration = {
             "authority": "__PYTHONLINE_AUTHORITY__",
             "path": "/extensions/pythonline-pyodide-runtime",
         },
+        {
+            "scheme": "__PYTHONLINE_PROTOCOL__",
+            "authority": "__PYTHONLINE_AUTHORITY__",
+            "path": "/extensions/pythonline-terminal",
+        },
     ],
 }
 
