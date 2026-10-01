@@ -15,7 +15,7 @@ cd ~/IdeaProjects/PythOnline
 
 rm -rf site
 mkdir -p site
-cp -a vscode-web/. site/
+cp -a vscode/out-vscode-web-shell/. site/
 
 test -f site/out/vs/code/browser/workbench/workbench.html
 
@@ -64,19 +64,8 @@ copy_asset() {
   echo "Normalized $target from $found"
 }
 
-shell_js="vscode/out-vscode-web-shell/vs/code/browser/workbench/workbench.js"
-shell_css="vscode/out-vscode-web-shell/vs/code/browser/workbench/workbench.css"
-
-test -s "$shell_js"
-test -s "$shell_css"
-
-mkdir -p site/out/vs/code/browser/workbench
-
-cp -f "$shell_js" \
-  site/out/vs/code/browser/workbench/workbench.js
-
-cp -f "$shell_css" \
-  site/out/vs/code/browser/workbench/workbench.css
+test -s site/out/vs/code/browser/workbench/workbench.js
+test -s site/out/vs/code/browser/workbench/workbench.css
 
 copy_asset "resources/server/manifest.json" \
   -name "manifest.json"
