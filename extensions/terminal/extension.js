@@ -11,6 +11,7 @@ let backing;
 let syncTimer;
 let syncing = false;
 let syncAgain = false;
+let extensionUri;
 
 function rootUri(path = '/') {
   return ROOT.with({ path: path || '/' });
@@ -203,7 +204,8 @@ async function createSession() {
   if (!writer.store) throw new Error('wasi-sh journal writer did not expose its store');
   patchWriterStore(writer.store);
 
-  worker = new Worker(new URL('./busybox-worker.mjs', import.meta.url), { type: 'module' });
+  const workerUrl = vscode.Uri.joinPath(extensionUri, 'busybox-worker.mjs').toString(true);
+  worker = new Worker(workerUrl, { type: 'module' });
   worker.postMessage({
     type: 'store',
     sab: writer.sab,
@@ -259,6 +261,7 @@ function createPty() {
 }
 
 async function activate(context) {
+  extensionUri = context.extensionUri;
   context.subscriptions.push(
     vscode.commands.registerCommand('pythonline.openTerminal', () => {
       if (!terminal) {
