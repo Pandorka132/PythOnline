@@ -61,8 +61,23 @@ text = template.read_text(encoding="utf-8")
 
 coi_script = '<script src="./coi-serviceworker.js"></script>'
 
+startup_script = """<script>
+const url = new URL(window.location.href);
+let changed = false;
+for (const key of ['workspace', 'folder', 'ew']) {
+    if (url.searchParams.has(key)) {
+        url.searchParams.delete(key);
+        changed = true;
+    }
+}
+if (changed) {
+    window.history.replaceState(null, '', url.pathname + (url.search ? url.search : '') + url.hash);
+}
+</script>"""
+
+
 if '<head>' in text:
-    text = text.replace('<head>', '<head>\n' + coi_script, 1)
+    text = text.replace('<head>', '<head>\n' + coi_script + '\n' + startup_script, 1)
 else:
     raise SystemExit("Could not find <head> in server-web template")
 
