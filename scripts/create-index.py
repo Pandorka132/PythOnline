@@ -37,11 +37,18 @@ configuration = {
         }
     },
     "folderUri": {"scheme": "pythonline", "path": "/workspace"},
-    "additionalBuiltinExtensions": [{
-        "scheme": "__PYTHONLINE_PROTOCOL__",
-        "authority": "__PYTHONLINE_AUTHORITY__",
-        "path": "/extensions/pythonline-browser-fs",
-    }],
+    "additionalBuiltinExtensions": [
+        {
+            "scheme": "__PYTHONLINE_PROTOCOL__",
+            "authority": "__PYTHONLINE_AUTHORITY__",
+            "path": "/extensions/pythonline-browser-fs",
+        },
+        {
+            "scheme": "__PYTHONLINE_PROTOCOL__",
+            "authority": "__PYTHONLINE_AUTHORITY__",
+            "path": "/extensions/pythonline-pyodide-runtime",
+        },
+    ],
 }
 
 builtin_extensions_json = json.dumps(builtin_extensions, separators=(",", ":"))
