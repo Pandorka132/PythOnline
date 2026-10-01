@@ -202,7 +202,33 @@ async function createSession() {
     'busybox-worker.mjs'
   ).toString(true);
 
-  worker = new Worker(workerUrl, { type: 'module' });
+  // VS Code's web extension Worker shim loads extension workers through
+  // importScripts(), which cannot load an ESM worker. Start a classic worker
+  // instead and let that worker perform a native dynamic import() of our ESM
+  // entrypoint. The imported module keeps its normal relative imports.
+  const workerBootstrap = [
+    'import(' + JSON.stringify(workerUrl) + ').catch((error) => {',
+    '  self.postMessage({ type: "worker-bootstrap-error",',
+    '    message: error?.stack || error?.message || String(error) });',
+    '});'
+  ].join('\\n');
+
+  const workerBlob = new Blob([workerBootstrap], { type: 'text/javascript' });
+  const workerBlobUrl = URL.createObjectURL(workerBlob);
+
+  worker = new Worker(workerBlobUrl);
+  worker.addEventListener('message', (event) => {
+    if (event.data?.type === 'worker-bootstrap-error') {
+      terminalOutput.fire(
+        '\\r\\n[BusyBox worker] ' + event.data.message + '\\r\\n'
+      );
+    }
+  });
+  worker.addEventListener('error', (event) => {
+    terminalOutput.fire(
+      '\\r\\n[BusyBox worker] ' + (event.message || 'worker error') + '\\r\\n'
+    );
+  });
 
   worker.onerror = (event) => {
     terminalOutput.fire(
