@@ -165,6 +165,11 @@ function patchWriterStore(store) {
 }
 
 async function createSession() {
+  const browserFs = vscode.extensions.getExtension('Pandorka132.pythonline-browser-fs');
+  if (browserFs) {
+    await browserFs.activate();
+  }
+
   const { spawn, memoryFs, journalWriter } = await loadWasi();
 
   const tree = await collectTree();
