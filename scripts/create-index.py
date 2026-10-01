@@ -12,15 +12,30 @@ output = site / "index.html"
 if not template.is_file():
     raise SystemExit(f"Missing server-web workbench template: {template}")
 
+builtin_extensions = []
+for extension_dir in sorted((site / "extensions").iterdir()):
+    if not extension_dir.is_dir() or extension_dir.name == "pythonline-browser-fs":
+        continue
+    package_json = extension_dir / "package.json"
+    if not package_json.is_file():
+        continue
+    manifest = json.loads(package_json.read_text(encoding="utf-8"))
+    builtin_extensions.append({
+        "extensionPath": extension_dir.name,
+        "packageJSON": manifest,
+    })
+
 configuration = {
     "productConfiguration": {"enableTelemetry": False},
-    "workspaceUri": {"scheme": "pythonline", "path": "/workspace"},
+    "folderUri": {"scheme": "pythonline", "path": "/workspace"},
     "additionalBuiltinExtensions": [{
         "scheme": "__PYTHONLINE_PROTOCOL__",
         "authority": "__PYTHONLINE_AUTHORITY__",
         "path": "/extensions/pythonline-browser-fs",
     }],
 }
+
+builtin_extensions_json = json.dumps(builtin_extensions, separators=(",", ":"))
 
 text = template.read_text(encoding="utf-8")
 
@@ -42,6 +57,9 @@ for key, value in replacements.items():
     text = text.replace(key, value)
 
 text = text.replace("/out/", "/")
+
+builtin_meta = f'<meta id="vscode-workbench-builtin-extensions" data-settings="{html.escape(builtin_extensions_json, quote=True)}">'
+text = text.replace("<!-- Workbench Auth Session -->", builtin_meta + "\n\n<!-- Workbench Auth Session -->", 1)
 
 bootstrap = """
 <script nonce="">
