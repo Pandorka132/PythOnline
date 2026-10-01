@@ -4,6 +4,8 @@ const WASI_SH = 'https://cdn.jsdelivr.net/npm/wasi-sh@0.11.0/src/';
 const ROOT = vscode.Uri.parse('pythonline:/workspace');
 
 let terminal;
+let terminalPty;
+let terminalOutput;
 let session;
 let worker;
 let writer;
@@ -15,12 +17,6 @@ let extensionUri;
 
 function rootUri(path = '/') {
   return ROOT.with({ path: path || '/' });
-}
-
-function toShellPath(path) {
-  if (path === '/workspace') return '/workspace';
-  if (path.startsWith('/workspace/')) return path;
-  return '/workspace' + (path.startsWith('/') ? path : '/' + path);
 }
 
 async function collectTree(path = '/workspace', files = {}, directories = []) {
@@ -37,37 +33,16 @@ async function collectTree(path = '/workspace', files = {}, directories = []) {
   return { files, directories };
 }
 
-function makeBackend(files, directories) {
-  const store = new backingMemoryFs(files);
-  for (const dir of directories.sort((a, b) => a.length - b.length)) {
-    try {
-      store.mkdirSync(dir);
-    } catch (error) {
-      if (error?.code !== 'EEXIST') throw error;
-    }
-  }
-  return store;
-}
-
 async function loadWasi() {
   const [spawnMod, fsMod] = await Promise.all([
     import(WASI_SH + 'spawn.mjs'),
     import(WASI_SH + 'fs.mjs')
   ]);
-  return { spawn: spawnMod.spawn, memoryFs: fsMod.memoryFs, journalWriter: fsMod.journalWriter };
-}
-
-let backingMemoryFs;
-
-async function writeStoreTree(store, path = '/workspace', seen = new Set()) {
-  const normalized = path === '/workspace' ? '/workspace' : path;
-  seen.add(normalized);
-  const stat = store.statSync(normalized);
-  if ((stat.mode & 0o170000) === 0o040000) {
-    for (const name of store.readdirSync(normalized)) {
-      await writeStoreTree(store, normalized === '/' ? '/' + name : normalized + '/' + name, seen);
-    }
-  }
+  return {
+    spawn: spawnMod.spawn,
+    memoryFs: fsMod.memoryFs,
+    journalWriter: fsMod.journalWriter
+  };
 }
 
 async function readProviderTree(path = '/workspace', out = new Map()) {
@@ -77,8 +52,7 @@ async function readProviderTree(path = '/workspace', out = new Map()) {
     if (type === vscode.FileType.Directory) {
       await readProviderTree(child, out);
     } else if (type === vscode.FileType.File) {
-      const bytes = await vscode.workspace.fs.readFile(rootUri(child));
-      out.set(child, bytes);
+      out.set(child, await vscode.workspace.fs.readFile(rootUri(child)));
     }
   }
   return out;
@@ -163,8 +137,14 @@ function scheduleSync() {
 
 function patchWriterStore(store) {
   const mutating = new Set([
-    'createFileSync', 'mkdirSync', 'rmdirSync', 'unlinkSync',
-    'renameSync', 'linkSync', 'writeSync', 'touchSync'
+    'createFileSync',
+    'mkdirSync',
+    'rmdirSync',
+    'unlinkSync',
+    'renameSync',
+    'linkSync',
+    'writeSync',
+    'touchSync'
   ]);
 
   for (const name of mutating) {
@@ -180,17 +160,21 @@ function patchWriterStore(store) {
 
 async function createSession() {
   const { spawn, memoryFs, journalWriter } = await loadWasi();
-  backingMemoryFs = memoryFs;
 
   const tree = await collectTree();
   const files = {};
-  for (const [path, data] of Object.entries(tree.files)) files[path] = data;
+  for (const [path, data] of Object.entries(tree.files)) {
+    files[path] = data;
+  }
+
   backing = memoryFs(files);
+
   try {
     backing.mkdirSync('/workspace');
   } catch (error) {
     if (error?.code !== 'EEXIST') throw error;
   }
+
   for (const dir of tree.directories.sort((a, b) => a.length - b.length)) {
     try {
       backing.mkdirSync(dir);
@@ -201,11 +185,25 @@ async function createSession() {
 
   writer = await journalWriter(backing);
   if (writer.ready) await writer.ready;
-  if (!writer.store) throw new Error('wasi-sh journal writer did not expose its store');
+  if (!writer.store) {
+    throw new Error('wasi-sh journal writer did not expose its store');
+  }
+
   patchWriterStore(writer.store);
 
-  const workerUrl = vscode.Uri.joinPath(extensionUri, 'busybox-worker.mjs').toString(true);
+  const workerUrl = vscode.Uri.joinPath(
+    extensionUri,
+    'busybox-worker.mjs'
+  ).toString(true);
+
   worker = new Worker(workerUrl, { type: 'module' });
+
+  worker.onerror = (event) => {
+    terminalOutput.fire(
+      '\r\n[BusyBox worker] ' + (event.message || 'worker error') + '\r\n'
+    );
+  };
+
   worker.postMessage({
     type: 'store',
     sab: writer.sab,
@@ -222,36 +220,47 @@ async function createSession() {
   });
 
   session.onOutput((bytes) => {
-    terminalPty.fire(new TextDecoder().decode(bytes).replace(/\n/g, '\r\n'));
+    terminalOutput.fire(
+      new TextDecoder().decode(bytes).replace(/\n/g, '\r\n')
+    );
   });
 
   session.onError((error) => {
-    terminalPty.fire('\r\n[BusyBox] ' + (error?.message || String(error)) + '\r\n');
+    terminalOutput.fire(
+      '\r\n[BusyBox] ' + (error?.message || String(error)) + '\r\n'
+    );
   });
 
   session.onExit((code) => {
-    terminalPty.fire('\r\n[BusyBox exited: ' + code + ']\r\n');
+    terminalOutput.fire('\r\n[BusyBox exited: ' + code + ']\r\n');
   });
 
-  session.write('cd /workspace\\n');
+  session.write('cd /workspace\n');
 }
 
 function createPty() {
   terminalOutput = new vscode.EventEmitter();
+
   return {
     onDidWrite: terminalOutput.event,
+
     open() {
-      terminalPty.fire = text => terminalOutput.fire(text);
-      void createSession().catch(error => {
-        terminalPty.fire('\r\nFailed to start BusyBox: ' + (error?.message || String(error)) + '\r\n');
+      void createSession().catch((error) => {
+        terminalOutput.fire(
+          '\r\nFailed to start BusyBox: ' +
+          (error?.message || String(error)) +
+          '\r\n'
+        );
       });
     },
+
     close() {
       try { session?.terminate(); } catch {}
       try { worker?.terminate(); } catch {}
       session = undefined;
       worker = undefined;
     },
+
     handleInput(data) {
       if (!session) return;
       session.write(data);
@@ -262,14 +271,17 @@ function createPty() {
 
 async function activate(context) {
   extensionUri = context.extensionUri;
+
   context.subscriptions.push(
     vscode.commands.registerCommand('pythonline.openTerminal', () => {
       if (!terminal) {
         terminalPty = createPty();
+
         terminal = vscode.window.createTerminal({
           name: 'PythOnline',
           pty: terminalPty
         });
+
         terminal.show();
         context.subscriptions.push(terminal);
       } else {
