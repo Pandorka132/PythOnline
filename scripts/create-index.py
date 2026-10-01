@@ -36,7 +36,6 @@ configuration = {
             "extensionUrlTemplate": "https://www.vscode-unpkg.net/_gallery/{publisher}/{name}/latest"
         }
     },
-    "folderUri": {"scheme": "pythonline", "path": "/workspace"},
     "additionalBuiltinExtensions": [
         {
             "scheme": "__PYTHONLINE_PROTOCOL__",
