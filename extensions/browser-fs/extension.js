@@ -357,11 +357,14 @@ async function activate(context) {
     })
   );
 
-  // Do not call updateWorkspaceFolders() here. In the web workbench that
-  // serializes the virtual workspace into the page URL, which causes the
-  // startup URL sanitizer to remove it again and creates a reload loop.
-  // The provider is intentionally registered without forcing a workspace.
-  // PythOnline components access pythonline:/workspace directly.
+  // Open the persistent browser workspace after the provider is registered.
+  if (!vscode.workspace.workspaceFolders?.length) {
+    await vscode.workspace.updateWorkspaceFolders(0, 0, {
+      uri: vscode.Uri.parse('pythonline:/workspace'),
+      name: 'PythOnline'
+    });
+  }
+
   context.subscriptions.push(
     vscode.commands.registerCommand('pythonline.clearBrowserFilesystem', async () => {
       const choice = await vscode.window.showWarningMessage(
