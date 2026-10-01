@@ -5,7 +5,7 @@ let runtimePromise;
 function getRuntime(context) {
   if (!runtimePromise) {
     runtimePromise = new Promise((resolve, reject) => {
-      const worker = new Worker(vscode.Uri.joinPath(context.extensionUri, "worker.js").toString(), { type: "module" });
+      const worker = new Worker(vscode.Uri.joinPath(context.extensionUri, "worker.js").toString());
       const pending = new Map();
       let nextId = 1;
 
