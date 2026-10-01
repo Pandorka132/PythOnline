@@ -17,6 +17,11 @@ if [ ! -f "$ROOT/browser-fs/package.json" ] || [ ! -f "$ROOT/browser-fs/extensio
   exit 1
 fi
 
+if [ ! -f "$ROOT/pyodide-runtime/package.json" ] || [ ! -f "$ROOT/pyodide-runtime/extension.js" ] || [ ! -f "$ROOT/pyodide-runtime/worker.js" ]; then
+  echo "Missing Pyodide runtime extension"
+  exit 1
+fi
+
 cd "$VSCODE"
 
 echo "==> Building VS Code web extensions"
@@ -55,6 +60,9 @@ cp -a "$VSCODE/.build/extensions/." "$SITE/extensions/"
 mkdir -p "$SITE/extensions/pythonline-browser-fs"
 cp -a "$ROOT/browser-fs/." "$SITE/extensions/pythonline-browser-fs/"
 
+mkdir -p "$SITE/extensions/pythonline-pyodide-runtime"
+cp -a "$ROOT/pyodide-runtime/." "$SITE/extensions/pythonline-pyodide-runtime/"
+
 python3 "$ROOT/scripts/create-index.py"
 
 echo "==> Validating output"
@@ -66,6 +74,9 @@ required=(
   "$SITE/extensions/pythonline-browser-fs/package.json"
   "$SITE/extensions/pythonline-browser-fs/extension.js"
   "$SITE/extensions/pythonline-browser-fs/package.nls.json"
+  "$SITE/extensions/pythonline-pyodide-runtime/package.json"
+  "$SITE/extensions/pythonline-pyodide-runtime/extension.js"
+  "$SITE/extensions/pythonline-pyodide-runtime/worker.js"
   "$SITE/extensions/theme-defaults/package.json"
   "$SITE/extensions/theme-seti/package.json"
 )
