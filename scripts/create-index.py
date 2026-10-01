@@ -2,6 +2,7 @@
 from pathlib import Path
 import html
 import json
+import re
 
 root = Path(__file__).resolve().parents[1]
 site = root / "site"
@@ -13,7 +14,12 @@ if not template.is_file():
 
 configuration = {
     "productConfiguration": {"enableTelemetry": False},
-    "workspaceUri": {"scheme": "tmp", "path": "/default.code-workspace"},
+    "workspaceUri": {"scheme": "pythonline", "path": "/workspace"},
+    "additionalBuiltinExtensions": [{
+        "scheme": "__PYTHONLINE_PROTOCOL__",
+        "authority": "__PYTHONLINE_AUTHORITY__",
+        "path": "/extensions/pythonline-browser-fs",
+    }],
 }
 
 text = template.read_text(encoding="utf-8")
@@ -35,15 +41,35 @@ replacements = {
 for key, value in replacements.items():
     text = text.replace(key, value)
 
-# The server-web template is normally nested under out/vs/... .
-# Our static site copies that output to the site root, so /out/ must become /.
 text = text.replace("/out/", "/")
 
-import re
+bootstrap = """
+<script nonce="">
+const workbenchConfiguration = document.getElementById('vscode-workbench-web-configuration');
+const configuration = JSON.parse(workbenchConfiguration.getAttribute('data-settings'));
+for (const extension of configuration.additionalBuiltinExtensions ?? []) {
+    if (extension.scheme === '__PYTHONLINE_PROTOCOL__') {
+        extension.scheme = window.location.protocol.slice(0, -1);
+    }
+    if (extension.authority === '__PYTHONLINE_AUTHORITY__') {
+        extension.authority = window.location.host;
+    }
+}
+workbenchConfiguration.setAttribute('data-settings', JSON.stringify(configuration));
+</script>
+"""
 
-unresolved = re.findall(r"\\{\\{[A-Z0-9_]+\\}\\}", text)
+marker = "<!-- Workbench Auth Session -->"
+if marker not in text:
+    raise SystemExit("Could not find Workbench Auth Session marker in server-web template")
+text = text.replace(marker, bootstrap + "\n" + marker, 1)
+
+unresolved = re.findall(r"\{\{[A-Z0-9_]+\}\}", text)
 if unresolved:
-    raise SystemExit("Unresolved VS Code template placeholders: " + ", ".join(sorted(set(unresolved))))
+    raise SystemExit(
+        "Unresolved VS Code template placeholders: "
+        + ", ".join(sorted(set(unresolved)))
+    )
 
 output.write_text(text, encoding="utf-8")
-print("Generated site/index.html from the server-web template")
+print("Generated site/index.html with PythOnline browser filesystem")
