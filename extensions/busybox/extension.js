@@ -33,10 +33,16 @@ async function collectTree(path = '/workspace', files = {}, directories = []) {
   return { files, directories };
 }
 
+function nativeImport(url) {
+  // VS Code's web extension loader rewrites a normal dynamic import() into
+  // importScripts(). That is invalid for ESM, so keep this import native.
+  return Function('url', 'return import(url)')(url);
+}
+
 async function loadWasi() {
   const [spawnMod, fsMod] = await Promise.all([
-    import(WASI_SH + 'spawn.mjs'),
-    import(WASI_SH + 'fs.mjs')
+    nativeImport(WASI_SH + 'spawn.mjs'),
+    nativeImport(WASI_SH + 'fs.mjs')
   ]);
   return {
     spawn: spawnMod.spawn,
@@ -273,12 +279,12 @@ async function activate(context) {
   extensionUri = context.extensionUri;
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('pythonline.openTerminal', () => {
+    vscode.commands.registerCommand('busybox.open', () => {
       if (!terminal) {
         terminalPty = createPty();
 
         terminal = vscode.window.createTerminal({
-          name: 'PythOnline',
+          name: 'BusyBox',
           pty: terminalPty
         });
 
@@ -290,7 +296,7 @@ async function activate(context) {
     })
   );
 
-  await vscode.commands.executeCommand('pythonline.openTerminal');
+  await vscode.commands.executeCommand('busybox.open');
 }
 
 module.exports = { activate };
