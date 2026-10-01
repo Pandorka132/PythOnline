@@ -19,6 +19,10 @@
         "icon": "$(play)"
       },
       {
+        "command": "pythonline.runPythonPath",
+        "title": "PythOnline: Run Python Path"
+      },
+      {
         "command": "pythonline.runPythonSelection",
         "title": "PythOnline: Run Python Selection",
         "icon": "$(play)"
