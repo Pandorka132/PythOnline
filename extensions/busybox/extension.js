@@ -202,28 +202,20 @@ async function createSession() {
 
   patchWriterStore(writer.store);
 
-  const workerUrl = vscode.Uri.joinPath(
+  const workerModuleUrl = vscode.Uri.joinPath(
     extensionUri,
     'busybox-worker.mjs'
   ).toString(true);
+  const workerBootstrapUrl = vscode.Uri.joinPath(
+    extensionUri,
+    'busybox-worker-bootstrap.js'
+  ).toString(true);
 
-  // VS Code's web extension Worker shim loads extension workers through
-  // importScripts(), which cannot load an ESM worker. Start a classic worker
-  // instead and let that worker perform a native dynamic import() of our ESM
-  // entrypoint. The imported module keeps its normal relative imports.
-  const workerBootstrap = [
-    'import(' + JSON.stringify(workerUrl) + ').then(() => {',
-    '  self.postMessage({ type: "worker-bootstrap-ready" });',
-    '}).catch((error) => {',
-    '  self.postMessage({ type: "worker-bootstrap-error",',
-    '    message: error?.stack || error?.message || String(error) });',
-    '});'
-  ].join('\n');
-
-  const workerBlob = new Blob([workerBootstrap], { type: 'text/javascript' });
-  const workerBlobUrl = URL.createObjectURL(workerBlob);
-
-  worker = new Worker(workerBlobUrl);
+  // Use a real same-origin worker file. Blob workers are blocked by the
+  // PythOnline CSP, while this classic worker can dynamically import the ESM
+  // WASI-SH worker module.
+  worker = new Worker(workerBootstrapUrl);
+  worker.postMessage({ type: 'load', url: workerModuleUrl });
 
   await new Promise((resolve, reject) => {
     const onMessage = (event) => {
