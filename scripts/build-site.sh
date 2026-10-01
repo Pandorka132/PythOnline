@@ -90,6 +90,17 @@ for package in xterm addon-unicode11 addon-clipboard addon-progress addon-webgl;
   fi
 done
 
+# VS Code's browser workbench loads these CommonJS/AMD text-rendering modules
+# as runtime assets rather than bundling them into workbench.js.
+for package in vscode-textmate vscode-oniguruma; do
+  if [ -d "$VSCODE/node_modules/$package" ]; then
+    cp -a "$VSCODE/node_modules/$package" "$SITE/node_modules/"
+  else
+    echo "Missing VS Code runtime package: $VSCODE/node_modules/$package"
+    exit 1
+  fi
+done
+
 python3 "$ROOT/scripts/create-index.py"
 
 echo "==> Validating output"
