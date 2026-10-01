@@ -87,7 +87,7 @@ function splitCommand(line) {
       else current += char;
     } else if (char === '"' || char === "'") {
       quote = char;
-    } else if (/\\s/.test(char)) {
+    } else if (/\s/.test(char)) {
       if (current) {
         result.push(current);
         current = '';
