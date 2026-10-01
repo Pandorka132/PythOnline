@@ -1,34 +1,35 @@
 #!/usr/bin/env python3
 from pathlib import Path
-import html
-import json
 
 root = Path(__file__).resolve().parents[1]
-workbench = root / "site/vs/code/browser/workbench/workbench.html"
-index = root / "site/index.html"
+site = root / "site"
+output = site / "index.html"
 
-configuration = {
-    "productConfiguration": {"enableTelemetry": False},
-    "workspaceUri": {"scheme": "tmp", "path": "/default.code-workspace"},
-}
+# Use the actual server-web workbench bundle directly. Do not load
+# VS Code's build-time workbench.html template.
+workbench_js = "vs/code/browser/workbench/workbench.js"
+workbench_css = "vs/code/browser/workbench/workbench.css"
+nls = "out/nls.messages.js"
 
-def render(template: Path, output: Path, base_url: str) -> None:
-    text = template.read_text(encoding="utf-8")
-    replacements = {
-        "{{WORKBENCH_WEB_BASE_URL}}": base_url,
-        "{{WORKBENCH_NLS_FALLBACK_URL}}": f"{base_url}/out/nls.messages.js",
-        "{{WORKBENCH_NLS_URL}}": f"{base_url}/out/nls.messages.js",
-        "{{WORKBENCH_AUTH_SESSION}}": "",
-        "{{WORKBENCH_SCRIPT_NONCE}}": "",
-        "{{WORKBENCH_WEB_CONFIGURATION}}": html.escape(
-            json.dumps(configuration, separators=(",", ":")), quote=True
-        ),
-    }
-    for key, value in replacements.items():
-        text = text.replace(key, value)
-    if "{{" in text or "}}" in text:
-        raise SystemExit(f"Unresolved VS Code template placeholders remain in {output}")
-    output.write_text(text, encoding="utf-8")
+html = f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PythOnline</title>
+  <link rel="stylesheet" href="./{workbench_css}">
+</head>
+<body>
+  <div id="workbench-web-container"></div>
+  <script>
+    globalThis._VSCODE_FILE_ROOT = new URL("./", document.baseURI).toString();
+    globalThis._VSCODE_WEB_BASE_URL = new URL("./", document.baseURI).toString();
+    globalThis._VSCODE_NLS_URL = new URL("./{nls}", document.baseURI).toString();
+  </script>
+  <script src="./{nls}"></script>
+  <script src="./{workbench_js}"></script>
+</body>
+</html>
+"""
 
-render(workbench, index, ".")
-render(workbench, workbench, "../../../../")
+output.write_text(html, encoding="utf-8")
