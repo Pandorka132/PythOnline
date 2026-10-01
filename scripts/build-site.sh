@@ -35,6 +35,50 @@ cp -a "$VSCODE/resources/server/." "$SITE/resources/server/"
 
 python3 "$ROOT/scripts/create-index.py"
 
+# The server-web bundle may reference its nested workbench.html directly.
+# Patch every generated HTML file so no VS Code build-time placeholders survive.
+python3 - "$SITE" <<'PY'
+from pathlib import Path
+import html
+import json
+import sys
+
+site = Path(sys.argv[1])
+config = html.escape(json.dumps({
+    "productConfiguration": {"enableTelemetry": False},
+    "workspaceUri": {"scheme": "tmp", "path": "/default.code-workspace"},
+}, separators=(",", ":")), quote=True)
+
+placeholders = (
+    "{{WORKBENCH_WEB_BASE_URL}}",
+    "{{WORKBENCH_NLS_URL}}",
+    "{{WORKBENCH_NLS_FALLBACK_URL}}",
+    "{{WORKBENCH_WEB_CONFIGURATION}}",
+)
+
+for path in site.rglob("*.html"):
+    text = path.read_text(encoding="utf-8")
+    if not any(p in text for p in placeholders):
+        continue
+
+    rel = path.parent.relative_to(site)
+    base = "." if not rel.parts else "/".join(".." for _ in rel.parts)
+
+    replacements = {
+        "{{WORKBENCH_WEB_BASE_URL}}": base,
+        "{{WORKBENCH_NLS_FALLBACK_URL}}": f"{base}/out/nls.messages.js",
+        "{{WORKBENCH_NLS_URL}}": f"{base}/out/nls.messages.js",
+        "{{WORKBENCH_AUTH_SESSION}}": "",
+        "{{WORKBENCH_SCRIPT_NONCE}}": "",
+        "{{WORKBENCH_WEB_CONFIGURATION}}": config,
+    }
+
+    for key, value in replacements.items():
+        text = text.replace(key, value)
+
+    path.write_text(text, encoding="utf-8")
+PY
+
 echo "==> Validating output"
 
 required=(
