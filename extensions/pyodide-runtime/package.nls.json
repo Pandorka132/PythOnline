@@ -1,0 +1,6 @@
+{
+  "command.pythonline.runPythonFile": "PythOnline: Run Python File",
+  "command.pythonline.runPythonSelection": "PythOnline: Run Python Selection",
+  "command.pythonline.installPythonPackage": "PythOnline: Install Python Package",
+  "command.pythonline.showPythonRuntime": "PythOnline: Show Python Runtime"
+}
