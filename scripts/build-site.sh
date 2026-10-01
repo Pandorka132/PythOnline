@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VSCODE="$ROOT/vscode"
 OUT="$ROOT/out-pythonline"
+OUT_REL="../out-pythonline"
 SITE="$ROOT/site"
 
 if [ ! -d "$VSCODE" ]; then
@@ -21,7 +22,7 @@ node build/next/index.ts bundle \
   --minify \
   --mangle-privates \
   --nls \
-  --out "$OUT"
+  --out "$OUT_REL"
 
 echo "==> Preparing static site"
 rm -rf "$SITE"
