@@ -6,7 +6,7 @@
   "publisher": "Pandorka132",
   "engines": { "vscode": "^1.100.0" },
   "browser": "./extension.js",
-  "activationEvents": ["*"],
+  "activationEvents": ["onCommand:pythonline.runPythonFile", "onCommand:pythonline.runPythonSelection", "onCommand:pythonline.installPythonPackage", "onCommand:pythonline.showPythonRuntime"],
   "contributes": {
     "commands": [
       {"command":"pythonline.runPythonFile","title":"PythOnline: Run Python File"},
