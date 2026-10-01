@@ -357,6 +357,15 @@ async function activate(context) {
     })
   );
 
+  // The filesystem provider must exist before VS Code opens the workspace URI.
+  // Open it only after registration to avoid the startup race in static web builds.
+  if (!vscode.workspace.workspaceFolders?.length) {
+    await vscode.workspace.updateWorkspaceFolders(0, 0, {
+      uri: vscode.Uri.parse('pythonline:/workspace'),
+      name: 'PythOnline'
+    });
+  }
+
   context.subscriptions.push(
     vscode.commands.registerCommand('pythonline.clearBrowserFilesystem', async () => {
       const choice = await vscode.window.showWarningMessage(
