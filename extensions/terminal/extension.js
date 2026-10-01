@@ -189,7 +189,9 @@ function makePty() {
           if (args.length !== 1 || !args[0].endsWith('.py')) {
             throw new Error('usage: python FILE.py');
           }
-          await vscode.commands.executeCommand('pythonline.runPythonPath', resolvePath(cwd, args[0]));
+          const result = await vscode.commands.executeCommand('pythonline.runPythonPath', resolvePath(cwd, args[0]));
+          if (result?.output) write(result.output);
+          if (result?.error) write(result.error);
           break;
 
         default:
