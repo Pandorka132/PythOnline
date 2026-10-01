@@ -1,19 +1,51 @@
 const PYODIDE_VERSION = "314.0.7";
 const INDEX_URL = "https://cdn.jsdelivr.net/npm/pyodide@" + PYODIDE_VERSION + "/";
+const DB_NAME = "pythonline-pyodide";
+const DB_VERSION = 1;
+const STORE = "state";
 let pyodidePromise;
 let installed = new Set();
+
+function openDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = () => request.result.createObjectStore(STORE);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function loadSavedPackages() {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const request = db.transaction(STORE, "readonly").objectStore(STORE).get("packages");
+    request.onsuccess = () => resolve(Array.isArray(request.result) ? request.result : []);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function savePackages(packages) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const request = db.transaction(STORE, "readwrite").objectStore(STORE).put(packages, "packages");
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
 
 async function runtime() {
   if (!pyodidePromise) {
     pyodidePromise = (async () => {
       const mod = await import(INDEX_URL + "pyodide.mjs");
       const pyodide = await mod.loadPyodide({ indexURL: INDEX_URL });
-      const saved = JSON.parse(localStorage.getItem("pythonline-pyodide-packages") || "[]");
+      const saved = await loadSavedPackages();
       if (saved.length) {
         await pyodide.loadPackage("micropip");
         for (const spec of saved) {
           try {
-            await pyodide.runPythonAsync("import micropip\nawait micropip.install(" + JSON.stringify(spec) + ")");
+            await pyodide.runPythonAsync(
+              "import micropip\nawait micropip.install(" + JSON.stringify(spec) + ")"
+            );
             installed.add(spec);
           } catch (error) {
             console.warn("Failed to restore package", spec, error);
@@ -44,18 +76,19 @@ async function runPython(code) {
 async function installPackage(spec) {
   const pyodide = await runtime();
   await pyodide.loadPackage("micropip");
-  await pyodide.runPythonAsync("import micropip\nawait micropip.install(" + JSON.stringify(spec) + ")");
+  await pyodide.runPythonAsync(
+    "import micropip\nawait micropip.install(" + JSON.stringify(spec) + ")"
+  );
   installed.add(spec);
-  localStorage.setItem("pythonline-pyodide-packages", JSON.stringify([...installed].sort()));
+  await savePackages([...installed].sort());
   return true;
 }
 
 async function listPackages() {
   const pyodide = await runtime();
-  const result = pyodide.runPython(
-    "import importlib.metadata; [(d.metadata['Name'], d.version) for d in importlib.metadata.distributions()]"
-  );
-  return result.toJs();
+  return JSON.parse(pyodide.runPython(
+    "import json, importlib.metadata; json.dumps([(d.metadata['Name'], d.version) for d in importlib.metadata.distributions()])"
+  ));
 }
 
 self.onmessage = async event => {
