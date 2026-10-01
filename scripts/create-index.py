@@ -14,13 +14,11 @@ if not template.is_file():
 
 builtin_extensions = []
 for extension_dir in sorted((site / "extensions").iterdir()):
-    if not extension_dir.is_dir():
+    if not extension_dir.is_dir() or extension_dir.name == "pythonline-browser-fs":
         continue
-
     package_json = extension_dir / "package.json"
     if not package_json.is_file():
         continue
-
     manifest = json.loads(package_json.read_text(encoding="utf-8"))
     builtin_extensions.append({
         "extensionPath": extension_dir.name,
@@ -37,7 +35,24 @@ configuration = {
             "resourceUrlTemplate": "https://{publisher}.vscode-unpkg.net/{publisher}/{name}/{version}/{path}",
             "extensionUrlTemplate": "https://www.vscode-unpkg.net/_gallery/{publisher}/{name}/latest"
         }
-    }
+    },
+    "additionalBuiltinExtensions": [
+        {
+            "scheme": "__PYTHONLINE_PROTOCOL__",
+            "authority": "__PYTHONLINE_AUTHORITY__",
+            "path": "/extensions/pythonline-browser-fs",
+        },
+        {
+            "scheme": "__PYTHONLINE_PROTOCOL__",
+            "authority": "__PYTHONLINE_AUTHORITY__",
+            "path": "/extensions/pythonline-pyodide-runtime",
+        },
+        {
+            "scheme": "__PYTHONLINE_PROTOCOL__",
+            "authority": "__PYTHONLINE_AUTHORITY__",
+            "path": "/extensions/pythonline-terminal",
+        },
+    ],
 }
 
 builtin_extensions_json = json.dumps(builtin_extensions, separators=(",", ":"))
@@ -70,12 +85,29 @@ for key, value in replacements.items():
 
 text = text.replace("/out/", "/")
 
-builtin_meta = (
-    '<meta id="vscode-workbench-builtin-extensions" '
-    f'data-settings="{html.escape(builtin_extensions_json, quote=True)}">'
-)
+builtin_meta = f'<meta id="vscode-workbench-builtin-extensions" data-settings="{html.escape(builtin_extensions_json, quote=True)}">'
+text = text.replace("<!-- Workbench Auth Session -->", builtin_meta + "\n\n<!-- Workbench Auth Session -->", 1)
+
+bootstrap = """
+<script nonce="">
+const workbenchConfiguration = document.getElementById('vscode-workbench-web-configuration');
+const configuration = JSON.parse(workbenchConfiguration.getAttribute('data-settings'));
+for (const extension of configuration.additionalBuiltinExtensions ?? []) {
+    if (extension.scheme === '__PYTHONLINE_PROTOCOL__') {
+        extension.scheme = window.location.protocol.slice(0, -1);
+    }
+    if (extension.authority === '__PYTHONLINE_AUTHORITY__') {
+        extension.authority = window.location.host;
+    }
+}
+workbenchConfiguration.setAttribute('data-settings', JSON.stringify(configuration));
+</script>
+"""
+
 marker = "<!-- Workbench Auth Session -->"
-text = text.replace(marker, builtin_meta + "\n\n" + marker, 1)
+if marker not in text:
+    raise SystemExit("Could not find Workbench Auth Session marker in server-web template")
+text = text.replace(marker, bootstrap + "\n" + marker, 1)
 
 unresolved = re.findall(r"\{\{[A-Z0-9_]+\}\}", text)
 if unresolved:
@@ -85,7 +117,4 @@ if unresolved:
     )
 
 output.write_text(text, encoding="utf-8")
-print(
-    "Generated site/index.html with "
-    f"{len(builtin_extensions)} built-in web extensions"
-)
+print("Generated site/index.html with PythOnline browser filesystem and terminal")
