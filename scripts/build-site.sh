@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VSCODE="$ROOT/vscode"
-OUT="$VSCODE/out-pythonline"
+OUT="$ROOT/out-pythonline"
 SITE="$ROOT/site"
 
 if [ ! -d "$VSCODE" ]; then
