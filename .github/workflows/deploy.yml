@@ -38,23 +38,21 @@ jobs:
       - name: Get VS Code commit
         run: echo "VSCODE_SHA=$(git -C vscode rev-parse HEAD)" >> "$GITHUB_ENV"
 
-      - name: Cache built VS Code Web
-        id: vscode-web-cache
+      - name: Cache VS Code dependencies
+        id: vscode-deps-cache
         uses: actions/cache@v4
         with:
-          path: |
-            vscode-web
-            vscode/node_modules
-          key: vscode-web-${{ env.VSCODE_SHA }}-node-${{ hashFiles('vscode/package-lock.json') }}
+          path: vscode/node_modules
+          key: vscode-node-${{ env.VSCODE_SHA }}-${{ hashFiles('vscode/package-lock.json') }}
 
       - name: Install native build dependencies
-        if: steps.vscode-web-cache.outputs.cache-hit != 'true'
+        if: steps.vscode-deps-cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y libkrb5-dev libx11-dev libxkbfile-dev pkg-config
 
       - name: Install VS Code dependencies
-        if: steps.vscode-web-cache.outputs.cache-hit != 'true'
+        if: steps.vscode-deps-cache.outputs.cache-hit != 'true'
         working-directory: vscode
         run: |
           # GitHub Actions runners occasionally reset long npm downloads.
@@ -79,17 +77,7 @@ jobs:
           echo "npm ci failed after 3 attempts"
           exit 1
 
-      - name: Build VS Code Web
-        working-directory: vscode
-        run: |
-          node build/next/index.ts bundle \
-            --target server-web \
-            --minify \
-            --mangle-privates \
-            --nls \
-            --out out-pythonline
-
-      - name: Prepare GitHub Pages site
+      - name: Build and package PythOnline
         run: ./site.sh
 
       - name: Configure Pages
