@@ -194,6 +194,8 @@ async function createSession() {
   }
 
   writer = await journalWriter(backing);
+  if (writer.ready) await writer.ready;
+  if (!writer.store) throw new Error('wasi-sh journal writer did not expose its store');
   patchWriterStore(writer.store);
 
   worker = new Worker(new URL('./busybox-worker.mjs', import.meta.url), { type: 'module' });
@@ -213,8 +215,7 @@ async function createSession() {
   });
 
   session.onOutput((bytes) => {
-    const text = new TextDecoder().decode(bytes);
-    terminalPty.fire(text);
+    terminalPty.fire(new TextDecoder().decode(bytes));
   });
 
   session.onError((error) => {
@@ -229,6 +230,7 @@ async function createSession() {
 }
 
 let terminalPty;
+let terminalOutput;
 
 function createPty() {
   return {
