@@ -46,6 +46,8 @@ mkdir -p "$SITE"
 
 cp -a "$OUT"/. "$SITE"/
 
+cp "$ROOT/coi-serviceworker.js" "$SITE/coi-serviceworker.js"
+
 mkdir -p "$SITE/resources/server"
 cp -a "$VSCODE/resources/server/." "$SITE/resources/server/"
 
@@ -69,6 +71,7 @@ echo "==> Validating output"
 
 required=(
   "$SITE/index.html"
+  "$SITE/coi-serviceworker.js"
   "$SITE/resources/server/manifest.json"
   "$SITE/resources/server/favicon.ico"
   "$SITE/extensions/pythonline-browser-fs/package.json"
