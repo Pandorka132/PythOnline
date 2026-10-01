@@ -165,12 +165,15 @@ function patchWriterStore(store) {
 }
 
 async function createSession() {
+  terminalOutput.fire('\r\n[BusyBox] initializing...\r\n');
   const browserFs = vscode.extensions.getExtension('Pandorka132.pythonline-browser-fs');
   if (browserFs) {
     await browserFs.activate();
   }
 
+  terminalOutput.fire('[BusyBox] loading WASI-SH...\r\n');
   const { spawn, memoryFs, journalWriter } = await loadWasi();
+  terminalOutput.fire('[BusyBox] WASI-SH loaded\r\n');
 
   const tree = await collectTree();
   const files = {};
@@ -194,6 +197,7 @@ async function createSession() {
     }
   }
 
+  terminalOutput.fire('[BusyBox] creating filesystem...\r\n');
   writer = await journalWriter(backing);
   if (writer.ready) await writer.ready;
   if (!writer.store) {
@@ -214,6 +218,7 @@ async function createSession() {
   // Use a real same-origin worker file. Blob workers are blocked by the
   // PythOnline CSP, while this classic worker can dynamically import the ESM
   // WASI-SH worker module.
+  terminalOutput.fire('[BusyBox] starting worker...\r\n');
   worker = new Worker(workerBootstrapUrl);
 
   await new Promise((resolve, reject) => {
@@ -252,12 +257,14 @@ async function createSession() {
     );
   };
 
+  terminalOutput.fire('[BusyBox] worker ready\r\n');
   worker.postMessage({
     type: 'store',
     sab: writer.sab,
     snapshot: writer.snapshot
   });
 
+  terminalOutput.fire('[BusyBox] starting shell...\r\n');
   session = await spawn({
     worker,
     tty: true,
@@ -267,6 +274,7 @@ async function createSession() {
     }
   });
 
+  terminalOutput.fire('[BusyBox] shell started\r\n');
   session.onOutput((bytes) => {
     terminalOutput.fire(
       new TextDecoder().decode(bytes).replace(/\n/g, '\r\n')
