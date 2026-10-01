@@ -207,7 +207,9 @@ async function createSession() {
   // instead and let that worker perform a native dynamic import() of our ESM
   // entrypoint. The imported module keeps its normal relative imports.
   const workerBootstrap = [
-    'import(' + JSON.stringify(workerUrl) + ').catch((error) => {',
+    'import(' + JSON.stringify(workerUrl) + ').then(() => {',
+    '  self.postMessage({ type: "worker-bootstrap-ready" });',
+    '}).catch((error) => {',
     '  self.postMessage({ type: "worker-bootstrap-error",',
     '    message: error?.stack || error?.message || String(error) });',
     '});'
@@ -217,13 +219,28 @@ async function createSession() {
   const workerBlobUrl = URL.createObjectURL(workerBlob);
 
   worker = new Worker(workerBlobUrl);
-  worker.addEventListener('message', (event) => {
-    if (event.data?.type === 'worker-bootstrap-error') {
-      terminalOutput.fire(
-        '\\r\\n[BusyBox worker] ' + event.data.message + '\\r\\n'
-      );
-    }
+
+  await new Promise((resolve, reject) => {
+    const onMessage = (event) => {
+      if (event.data?.type === 'worker-bootstrap-ready') {
+        worker.removeEventListener('message', onMessage);
+        worker.removeEventListener('error', onError);
+        resolve();
+      } else if (event.data?.type === 'worker-bootstrap-error') {
+        worker.removeEventListener('message', onMessage);
+        worker.removeEventListener('error', onError);
+        reject(new Error(event.data.message || 'BusyBox worker bootstrap failed'));
+      }
+    };
+    const onError = (event) => {
+      worker.removeEventListener('message', onMessage);
+      worker.removeEventListener('error', onError);
+      reject(new Error(event.message || 'BusyBox worker bootstrap failed'));
+    };
+    worker.addEventListener('message', onMessage);
+    worker.addEventListener('error', onError);
   });
+
   worker.addEventListener('error', (event) => {
     terminalOutput.fire(
       '\\r\\n[BusyBox worker] ' + (event.message || 'worker error') + '\\r\\n'
@@ -232,7 +249,7 @@ async function createSession() {
 
   worker.onerror = (event) => {
     terminalOutput.fire(
-      '\r\n[BusyBox worker] ' + (event.message || 'worker error') + '\r\n'
+      '\\r\\n[BusyBox worker] ' + (event.message || 'worker error') + '\\r\\n'
     );
   };
 
