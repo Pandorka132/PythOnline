@@ -23,6 +23,8 @@ replacements = {
     "{{WORKBENCH_NLS_FALLBACK_URL}}": "./nls.messages.js",
     "{{WORKBENCH_NLS_URL}}": "./nls.messages.js",
     "{{WORKBENCH_AUTH_SESSION}}": "",
+    "{{WORKBENCH_BUILTIN_EXTENSIONS}}": "[]",
+    "{{WORKBENCH_DEV_CSS_MODULES}}": "[]",
     "{{WORKBENCH_SCRIPT_NONCE}}": "",
     "{{WORKBENCH_WEB_CONFIGURATION}}": html.escape(
         json.dumps(configuration, separators=(",", ":")),
@@ -37,8 +39,11 @@ for key, value in replacements.items():
 # Our static site copies that output to the site root, so /out/ must become /.
 text = text.replace("/out/", "/")
 
-if "{{" in text or "}}" in text:
-    raise SystemExit("Unresolved VS Code template placeholders remain in index.html")
+import re
+
+unresolved = re.findall(r"\\{\\{[A-Z0-9_]+\\}\\}", text)
+if unresolved:
+    raise SystemExit("Unresolved VS Code template placeholders: " + ", ".join(sorted(set(unresolved))))
 
 output.write_text(text, encoding="utf-8")
 print("Generated site/index.html from the server-web template")
