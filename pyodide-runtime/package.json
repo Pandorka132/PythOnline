@@ -1,0 +1,30 @@
+{
+  "name": "pythonline-pyodide-runtime",
+  "displayName": "PythOnline Python Runtime (Pyodide)",
+  "description": "Browser Python runtime powered by Pyodide.",
+  "version": "0.1.0",
+  "publisher": "Pandorka132",
+  "engines": { "vscode": "^1.100.0" },
+  "browser": "./extension.js",
+  "activationEvents": ["*"],
+  "contributes": {
+    "commands": [
+      {"command":"pythonline.runPythonFile","title":"PythOnline: Run Python File"},
+      {"command":"pythonline.runPythonSelection","title":"PythOnline: Run Python Selection"},
+      {"command":"pythonline.installPythonPackage","title":"PythOnline: Install Python Package"},
+      {"command":"pythonline.showPythonRuntime","title":"PythOnline: Show Python Runtime"}
+    ],
+    "menus": {
+      "editor/title/run": [
+        {"command":"pythonline.runPythonFile","when":"resourceLangId == python","group":"navigation@10"},
+        {"command":"pythonline.runPythonSelection","when":"editorLangId == python && editorHasSelection","group":"navigation@11"}
+      ]
+    },
+    "configuration": {
+      "title":"PythOnline Python Runtime",
+      "properties": {
+        "pythonline.pyodideVersion":{"type":"string","default":"314.0.7","description":"Pyodide version used by the browser runtime."}
+      }
+    }
+  }
+}
