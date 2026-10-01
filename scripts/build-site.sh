@@ -22,6 +22,9 @@ cd "$VSCODE"
 echo "==> Building VS Code web extensions"
 npm run gulp compile-web
 
+echo "==> Packaging VS Code web extensions"
+node "$ROOT/scripts/package-vscode-web-extensions.ts"
+
 echo "==> Building VS Code server-web bundle"
 rm -rf "$OUT"
 
