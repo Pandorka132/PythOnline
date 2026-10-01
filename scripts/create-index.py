@@ -33,6 +33,10 @@ replacements = {
 for key, value in replacements.items():
     text = text.replace(key, value)
 
+# The server-web template is normally nested under out/vs/... .
+# Our static site copies that output to the site root, so /out/ must become /.
+text = text.replace("/out/", "/")
+
 if "{{" in text or "}}" in text:
     raise SystemExit("Unresolved VS Code template placeholders remain in index.html")
 
