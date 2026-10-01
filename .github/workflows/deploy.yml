@@ -79,113 +79,18 @@ jobs:
           echo "npm ci failed after 3 attempts"
           exit 1
 
-      - name: Build and package VS Code Web
-        if: steps.vscode-web-cache.outputs.cache-hit != 'true'
+      - name: Build VS Code Web
         working-directory: vscode
         run: |
-          # vscode-web-min intentionally uses the "web" build target. That target
-          # contains the web workbench but deliberately does NOT emit the browser
-          # shell at vs/code/browser/workbench/workbench.js.
-          npm run gulp vscode-web-min
-
-          # Build the browser shell with the "server-web" target. We only copy
-          # its browser entry assets into the static client package.
           node build/next/index.ts bundle \
-            --out out-vscode-web-shell \
             --target server-web \
             --minify \
-            --nls
+            --mangle-privates \
+            --nls \
+            --out out-pythonline
 
       - name: Prepare GitHub Pages site
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf site
-          mkdir -p site
-          cp -a vscode-web/. site/
-
-          test -f site/out/vs/code/browser/workbench/workbench.html
-
-          python3 - <<'PY'
-          from pathlib import Path
-          import html
-          
-          template = Path("site/out/vs/code/browser/workbench/workbench.html")
-          index = template.read_text()
-          
-          replacements = {
-              "{{WORKBENCH_WEB_BASE_URL}}": ".",
-              "{{WORKBENCH_NLS_FALLBACK_URL}}": "./out/nls.messages.js",
-              "{{WORKBENCH_NLS_URL}}": "./out/nls.messages.js",
-              "{{WORKBENCH_AUTH_SESSION}}": "",
-              "{{WORKBENCH_SCRIPT_NONCE}}": "",
-              "{{WORKBENCH_WEB_CONFIGURATION}}": html.escape(
-                  '{"productConfiguration":{"enableTelemetry":false},"workspaceUri":{"scheme":"tmp","path":"/default.code-workspace"}}',
-                  quote=True,
-              ),
-          }
-          for key, value in replacements.items():
-              index = index.replace(key, value)
-          
-          if "{{" in index:
-              raise SystemExit("Unresolved VS Code workbench template placeholders remain")
-          
-          Path("site/index.html").write_text(index)
-          PY
-          # The VS Code web package is normally laid out correctly, but its
-          # static-server resources use server-side routes. Normalize those paths
-          # for GitHub Pages so the browser can load the same files directly.
-          mkdir -p site/resources/server
-
-          copy_asset() {
-            local target="$1"
-            shift
-            local found
-            found="$(find site \( -type f -o -type l \) "$@" -print -quit)"
-            if [ -z "$found" ]; then
-              echo "Missing required VS Code web asset: $target"
-              exit 1
-            fi
-            cp -f "$found" "site/$target"
-            echo "Normalized $target from $found"
-          }
-
-          # The "web" target deliberately omits the browser shell.
-          # server-web is used only to produce these two client entry assets.
-          shell_js="vscode/out-vscode-web-shell/vs/code/browser/workbench/workbench.js"
-          shell_css="vscode/out-vscode-web-shell/vs/code/browser/workbench/workbench.css"
-
-          if [ ! -s "$shell_js" ]; then
-            echo "Missing browser workbench shell: $shell_js"
-            find vscode/out-vscode-web-shell -path '*vs/code/browser/workbench*' -type f | head -50 || true
-            exit 1
-          fi
-
-          if [ ! -s "$shell_css" ]; then
-            echo "Missing browser workbench stylesheet: $shell_css"
-            find vscode/out-vscode-web-shell -path '*vs/code/browser/workbench*' -type f | head -50 || true
-            exit 1
-          fi
-
-          mkdir -p site/out/vs/code/browser/workbench
-          cp -f "$shell_js" "site/out/vs/code/browser/workbench/workbench.js"
-          cp -f "$shell_css" "site/out/vs/code/browser/workbench/workbench.css"
-          echo "Copied browser shell assets from server-web bundle"
-          copy_asset "resources/server/manifest.json" \
-            -name "manifest.json"
-          copy_asset "resources/server/favicon.ico" \
-            -name "favicon.ico"
-          copy_asset "resources/server/code-192.png" \
-            -name "code-192.png"
-          copy_asset "resources/server/code-512.png" \
-            -name "code-512.png"
-
-          # Fail the build instead of deploying a broken Pages artifact.
-          test -s site/out/vs/code/browser/workbench/workbench.css
-          test -s site/out/vs/code/browser/workbench/workbench.js
-          test -s site/resources/server/manifest.json
-
-          touch site/.nojekyll
+        run: ./site.sh
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
