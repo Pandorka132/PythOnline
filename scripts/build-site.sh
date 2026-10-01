@@ -22,6 +22,11 @@ if [ ! -f "$ROOT/extensions/pyodide-runtime/package.json" ] || [ ! -f "$ROOT/ext
   exit 1
 fi
 
+if [ ! -f "$ROOT/extensions/busybox/package.json" ] || [ ! -f "$ROOT/extensions/busybox/extension.js" ] || [ ! -f "$ROOT/extensions/busybox/busybox-worker.mjs" ] || [ ! -f "$ROOT/extensions/busybox/package.nls.json" ]; then
+  echo "Missing BusyBox extension"
+  exit 1
+fi
+
 cd "$VSCODE"
 
 echo "==> Building VS Code web extensions"
@@ -65,6 +70,9 @@ cp -a "$ROOT/extensions/browser-fs/." "$SITE/extensions/pythonline-browser-fs/"
 mkdir -p "$SITE/extensions/pythonline-pyodide-runtime"
 cp -a "$ROOT/extensions/pyodide-runtime/." "$SITE/extensions/pythonline-pyodide-runtime/"
 
+mkdir -p "$SITE/extensions/pythonline-busybox"
+cp -a "$ROOT/extensions/busybox/." "$SITE/extensions/pythonline-busybox/"
+
 python3 "$ROOT/scripts/create-index.py"
 
 echo "==> Validating output"
@@ -79,6 +87,10 @@ required=(
   "$SITE/extensions/pythonline-browser-fs/package.nls.json"
   "$SITE/extensions/pythonline-pyodide-runtime/package.json"
   "$SITE/extensions/pythonline-pyodide-runtime/extension.js"
+  "$SITE/extensions/pythonline-busybox/package.json"
+  "$SITE/extensions/pythonline-busybox/extension.js"
+  "$SITE/extensions/pythonline-busybox/busybox-worker.mjs"
+  "$SITE/extensions/pythonline-busybox/package.nls.json"
   "$SITE/extensions/theme-defaults/package.json"
   "$SITE/extensions/theme-seti/package.json"
 )
