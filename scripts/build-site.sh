@@ -19,6 +19,9 @@ fi
 
 cd "$VSCODE"
 
+echo "==> Building VS Code web extensions"
+npm run gulp compile-extensions-build
+
 echo "==> Building VS Code server-web bundle"
 rm -rf "$OUT"
 
@@ -38,6 +41,14 @@ cp -a "$OUT"/. "$SITE"/
 mkdir -p "$SITE/resources/server"
 cp -a "$VSCODE/resources/server/." "$SITE/resources/server/"
 
+# server-web expects the compiled built-in extensions at /extensions.
+if [ ! -d "$VSCODE/.build/extensions" ]; then
+  echo "Missing compiled VS Code extensions: $VSCODE/.build/extensions"
+  exit 1
+fi
+mkdir -p "$SITE/extensions"
+cp -a "$VSCODE/.build/extensions/." "$SITE/extensions/"
+
 mkdir -p "$SITE/extensions/pythonline-browser-fs"
 cp -a "$ROOT/browser-fs/." "$SITE/extensions/pythonline-browser-fs/"
 
@@ -51,6 +62,9 @@ required=(
   "$SITE/resources/server/favicon.ico"
   "$SITE/extensions/pythonline-browser-fs/package.json"
   "$SITE/extensions/pythonline-browser-fs/extension.js"
+  "$SITE/extensions/pythonline-browser-fs/package.nls.json"
+  "$SITE/extensions/theme-defaults/package.json"
+  "$SITE/extensions/theme-seti/package.json"
 )
 
 for file in "${required[@]}"; do
