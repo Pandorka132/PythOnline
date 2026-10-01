@@ -50,7 +50,7 @@ configuration = {
         {
             "scheme": "__PYTHONLINE_PROTOCOL__",
             "authority": "__PYTHONLINE_AUTHORITY__",
-            "path": "/extensions/pythonline-terminal",
+            "path": "/extensions/pythonline-busybox",
         },
     ],
 }
@@ -117,4 +117,4 @@ if unresolved:
     )
 
 output.write_text(text, encoding="utf-8")
-print("Generated site/index.html with PythOnline browser filesystem and terminal")
+print("Generated site/index.html with PythOnline browser filesystem and BusyBox terminal")
