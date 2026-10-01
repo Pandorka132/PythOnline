@@ -1,12 +1,6 @@
 cd vscode
 npm run gulp vscode-web-min
 
-node build/next/index.ts bundle \
-            --out out-vscode-web-shell \
-            --target server-web \
-            --minify \
-            --nls
-
 
 cat > /tmp/prepare-site.sh <<'EOF'
 set -euo pipefail
@@ -15,7 +9,7 @@ cd ~/IdeaProjects/PythOnline
 
 rm -rf site
 mkdir -p site
-cp -a vscode/out-vscode-web-shell/. site/
+cp -a vscode/out-vscode-web-min/. site/
 
 test -f site/out/vs/code/browser/workbench/workbench.html
 
@@ -47,41 +41,9 @@ if "{{" in index:
 Path("site/index.html").write_text(index)
 PY
 
-mkdir -p site/resources/server
-
-copy_asset() {
-  local target="$1"
-  shift
-  local found
-  found="$(find site \( -type f -o -type l \) "$@" -print -quit)"
-
-  if [ -z "$found" ]; then
-    echo "Missing required VS Code web asset: $target"
-    exit 1
-  fi
-
-  cp -f "$found" "site/$target"
-  echo "Normalized $target from $found"
-}
-
 test -s site/out/vs/code/browser/workbench/workbench.js
 test -s site/out/vs/code/browser/workbench/workbench.css
-
-copy_asset "resources/server/manifest.json" \
-  -name "manifest.json"
-
-copy_asset "resources/server/favicon.ico" \
-  -name "favicon.ico"
-
-copy_asset "resources/server/code-192.png" \
-  -name "code-192.png"
-
-copy_asset "resources/server/code-512.png" \
-  -name "code-512.png"
-
-test -s site/out/vs/code/browser/workbench/workbench.css
-test -s site/out/vs/code/browser/workbench/workbench.js
-test -s site/resources/server/manifest.json
+test -s site/out/nls.messages.js
 
 touch site/.nojekyll
 
