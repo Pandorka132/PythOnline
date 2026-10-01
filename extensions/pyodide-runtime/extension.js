@@ -101,6 +101,16 @@ async function listPackages() {
   );
 }
 
+async function readWorkspaceFile(path) {
+  const uri = vscode.Uri.parse("pythonline:" + path);
+  const bytes = await vscode.workspace.fs.readFile(uri);
+  return new TextDecoder().decode(bytes);
+}
+
+async function executeResult(code) {
+  return runPython(code);
+}
+
 async function execute(context, code) {
   const result = await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: "Pyodide indítása…" },
@@ -126,6 +136,11 @@ async function activate(context) {
       } catch (error) {
         vscode.window.showErrorMessage("Python futtatási hiba: " + error.message);
       }
+    }),
+
+    vscode.commands.registerCommand("pythonline.runPythonPath", async (path) => {
+      const code = await readWorkspaceFile(path);
+      return executeResult(code);
     }),
 
     vscode.commands.registerCommand("pythonline.runPythonSelection", async () => {
