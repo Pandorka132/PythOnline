@@ -20,7 +20,7 @@ fi
 cd "$VSCODE"
 
 echo "==> Building VS Code web extensions"
-npm run gulp compile-extensions-build
+npm run gulp compile-web
 
 echo "==> Building VS Code server-web bundle"
 rm -rf "$OUT"
