@@ -59,6 +59,14 @@ builtin_extensions_json = json.dumps(builtin_extensions, separators=(",", ":"))
 
 text = template.read_text(encoding="utf-8")
 
+coi_script = '<script src="./coi-serviceworker.js"></script>'
+
+if '<head>' in text:
+    text = text.replace('<head>', '<head>\\n' + coi_script, 1)
+else:
+    raise SystemExit("Could not find <head> in server-web template")
+
+
 replacements = {
     "{{WORKBENCH_WEB_BASE_URL}}": ".",
     "{{WORKBENCH_NLS_FALLBACK_URL}}": "./nls.messages.js",
