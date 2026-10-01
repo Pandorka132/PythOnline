@@ -73,6 +73,20 @@ cp -a "$ROOT/extensions/pyodide-runtime/." "$SITE/extensions/pythonline-pyodide-
 mkdir -p "$SITE/extensions/pythonline-busybox"
 cp -a "$ROOT/extensions/busybox/." "$SITE/extensions/pythonline-busybox/"
 
+# The browser terminal UI uses xterm.js at runtime. server-web does not bundle this AMD asset.
+XTERM_JS="$VSCODE/node_modules/@xterm/xterm/lib/xterm.js"
+XTERM_CSS="$VSCODE/node_modules/@xterm/xterm/css/xterm.css"
+if [ ! -f "$XTERM_JS" ]; then
+  echo "Missing xterm.js runtime asset: $XTERM_JS"
+  exit 1
+fi
+mkdir -p "$SITE/node_modules/@xterm/xterm/lib"
+cp "$XTERM_JS" "$SITE/node_modules/@xterm/xterm/lib/xterm.js"
+if [ -f "$XTERM_CSS" ]; then
+  mkdir -p "$SITE/node_modules/@xterm/xterm/css"
+  cp "$XTERM_CSS" "$SITE/node_modules/@xterm/xterm/css/xterm.css"
+fi
+
 python3 "$ROOT/scripts/create-index.py"
 
 echo "==> Validating output"
