@@ -26,7 +26,16 @@ for extension_dir in sorted((site / "extensions").iterdir()):
     })
 
 configuration = {
-    "productConfiguration": {"enableTelemetry": False},
+    "productConfiguration": {
+        "enableTelemetry": False,
+        "extensionsGallery": {
+            "serviceUrl": "https://marketplace.visualstudio.com/_apis/public/gallery",
+            "itemUrl": "https://marketplace.visualstudio.com/items",
+            "publisherUrl": "https://marketplace.visualstudio.com/publishers",
+            "resourceUrlTemplate": "https://{publisher}.vscode-unpkg.net/{publisher}/{name}/{version}/{path}",
+            "extensionUrlTemplate": "https://www.vscode-unpkg.net/_gallery/{publisher}/{name}/latest"
+        }
+    },
     "folderUri": {"scheme": "pythonline", "path": "/workspace"},
     "additionalBuiltinExtensions": [{
         "scheme": "__PYTHONLINE_PROTOCOL__",
