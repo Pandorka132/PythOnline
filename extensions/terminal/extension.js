@@ -1,236 +1,257 @@
 const vscode = require('vscode');
 
+const WASI_SH = 'https://cdn.jsdelivr.net/npm/wasi-sh@0.11.0/src/';
 const ROOT = vscode.Uri.parse('pythonline:/workspace');
+
 let terminal;
+let session;
+let worker;
+let writer;
+let backing;
+let syncTimer;
+let syncing = false;
+let syncAgain = false;
+
+function rootUri(path = '/') {
+  return ROOT.with({ path: path || '/' });
+}
+
+function toShellPath(path) {
+  if (path === '/workspace') return '/workspace';
+  if (path.startsWith('/workspace/')) return path;
+  return '/workspace' + (path.startsWith('/') ? path : '/' + path);
+}
+
+async function collectTree(path = '/workspace', files = {}, directories = []) {
+  const entries = await vscode.workspace.fs.readDirectory(rootUri(path));
+  if (path !== '/workspace') directories.push(path);
+  for (const [name, type] of entries) {
+    const child = path === '/workspace' ? '/workspace/' + name : path + '/' + name;
+    if (type === vscode.FileType.Directory) {
+      await collectTree(child, files, directories);
+    } else if (type === vscode.FileType.File) {
+      files[child] = await vscode.workspace.fs.readFile(rootUri(child));
+    }
+  }
+  return { files, directories };
+}
+
+function makeBackend(files, directories) {
+  const store = new backingMemoryFs(files);
+  for (const dir of directories.sort((a, b) => a.length - b.length)) {
+    try {
+      store.mkdirSync(dir);
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+    }
+  }
+  return store;
+}
+
+async function loadWasi() {
+  const [spawnMod, fsMod] = await Promise.all([
+    import(WASI_SH + 'spawn.mjs'),
+    import(WASI_SH + 'fs.mjs')
+  ]);
+  return { spawn: spawnMod.spawn, memoryFs: fsMod.memoryFs, journalWriter: fsMod.journalWriter };
+}
+
+let backingMemoryFs;
+
+async function writeStoreTree(store, path = '/workspace', seen = new Set()) {
+  const normalized = path === '/workspace' ? '/workspace' : path;
+  seen.add(normalized);
+  const stat = store.statSync(normalized);
+  if ((stat.mode & 0o170000) === 0o040000) {
+    for (const name of store.readdirSync(normalized)) {
+      await writeStoreTree(store, normalized === '/' ? '/' + name : normalized + '/' + name, seen);
+    }
+  }
+}
+
+async function readProviderTree(path = '/workspace', out = new Map()) {
+  out.set(path, 'dir');
+  for (const [name, type] of await vscode.workspace.fs.readDirectory(rootUri(path))) {
+    const child = path === '/workspace' ? '/workspace/' + name : path + '/' + name;
+    if (type === vscode.FileType.Directory) {
+      await readProviderTree(child, out);
+    } else if (type === vscode.FileType.File) {
+      const bytes = await vscode.workspace.fs.readFile(rootUri(child));
+      out.set(child, bytes);
+    }
+  }
+  return out;
+}
+
+function sameBytes(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+async function flushStoreToWorkspace() {
+  if (!writer?.store) return;
+  if (syncing) {
+    syncAgain = true;
+    return;
+  }
+
+  syncing = true;
+  try {
+    const current = await readProviderTree();
+    const wanted = new Map();
+
+    async function walk(path) {
+      const stat = writer.store.statSync(path);
+      const isDir = (stat.mode & 0o170000) === 0o040000;
+      if (isDir) {
+        wanted.set(path, 'dir');
+        for (const name of writer.store.readdirSync(path)) {
+          await walk(path === '/' ? '/' + name : path + '/' + name);
+        }
+      } else {
+        const data = new Uint8Array(stat.size);
+        if (stat.size) writer.store.readSync(path, data, 0, stat.size);
+        wanted.set(path, data);
+      }
+    }
+
+    await walk('/workspace');
+
+    const pathsToDelete = [...current.keys()]
+      .filter(path => path !== '/workspace' && !wanted.has(path))
+      .sort((a, b) => b.length - a.length);
+
+    for (const path of pathsToDelete) {
+      await vscode.workspace.fs.delete(rootUri(path), { recursive: true, useTrash: false });
+    }
+
+    const dirs = [...wanted.entries()]
+      .filter(([, value]) => value === 'dir')
+      .map(([path]) => path)
+      .sort((a, b) => a.length - b.length);
+
+    for (const path of dirs) {
+      if (!current.has(path)) {
+        try {
+          await vscode.workspace.fs.createDirectory(rootUri(path));
+        } catch {}
+      }
+    }
+
+    for (const [path, value] of wanted) {
+      if (value === 'dir') continue;
+      const old = current.get(path);
+      if (!sameBytes(old, value)) {
+        await vscode.workspace.fs.writeFile(rootUri(path), value);
+      }
+    }
+  } finally {
+    syncing = false;
+    if (syncAgain) {
+      syncAgain = false;
+      scheduleSync();
+    }
+  }
+}
+
+function scheduleSync() {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => void flushStoreToWorkspace(), 250);
+}
+
+function patchWriterStore(store) {
+  const mutating = new Set([
+    'createFileSync', 'mkdirSync', 'rmdirSync', 'unlinkSync',
+    'renameSync', 'linkSync', 'writeSync', 'touchSync'
+  ]);
+
+  for (const name of mutating) {
+    const original = store[name];
+    if (typeof original !== 'function') continue;
+    store[name] = function (...args) {
+      const result = original.apply(this, args);
+      scheduleSync();
+      return result;
+    };
+  }
+}
+
+async function createSession() {
+  const { spawn, memoryFs, journalWriter } = await loadWasi();
+  backingMemoryFs = memoryFs;
+
+  const tree = await collectTree();
+  const files = {};
+  for (const [path, data] of Object.entries(tree.files)) files[path] = data;
+  backing = memoryFs(files);
+  for (const dir of tree.directories.sort((a, b) => a.length - b.length)) {
+    try {
+      backing.mkdirSync(dir);
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+    }
+  }
+
+  writer = await journalWriter(backing);
+  patchWriterStore(writer.store);
+
+  worker = new Worker(new URL('./busybox-worker.mjs', import.meta.url), { type: 'module' });
+  worker.postMessage({
+    type: 'store',
+    sab: writer.sab,
+    snapshot: writer.snapshot
+  });
+
+  session = await spawn({
+    worker,
+    tty: true,
+    env: {
+      HOME: '/workspace',
+      PS1: '\\[\\033[32m\\]\\w\\[\\033[0m\\] $ '
+    }
+  });
+
+  session.onOutput((bytes) => {
+    const text = new TextDecoder().decode(bytes);
+    terminalPty.fire(text);
+  });
+
+  session.onError((error) => {
+    terminalPty.fire('\\r\\n[BusyBox] ' + (error?.message || String(error)) + '\\r\\n');
+  });
+
+  session.onExit((code) => {
+    terminalPty.fire('\\r\\n[BusyBox exited: ' + code + ']\\r\\n');
+  });
+
+  session.write('cd /workspace\\n');
+}
+
 let terminalPty;
 
-function normalize(path) {
-  const parts = path.split('/').filter(Boolean);
-  const out = [];
-  for (const part of parts) {
-    if (part === '.') continue;
-    if (part === '..') out.pop();
-    else out.push(part);
-  }
-  return '/' + out.join('/');
-}
-
-function resolvePath(cwd, value) {
-  if (!value) return cwd;
-  return normalize(value.startsWith('/') ? value : cwd + '/' + value);
-}
-
-function uri(path) {
-  return ROOT.with({ path });
-}
-
-async function exists(path) {
-  try {
-    await vscode.workspace.fs.stat(uri(path));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function isDirectory(path) {
-  try {
-    return (await vscode.workspace.fs.stat(uri(path))).type === vscode.FileType.Directory;
-  } catch {
-    return false;
-  }
-}
-
-async function list(path) {
-  return vscode.workspace.fs.readDirectory(uri(path));
-}
-
-async function readText(path) {
-  const bytes = await vscode.workspace.fs.readFile(uri(path));
-  return new TextDecoder().decode(bytes);
-}
-
-async function writeText(path, text) {
-  await vscode.workspace.fs.writeFile(uri(path), new TextEncoder().encode(text));
-}
-
-async function mkdir(path) {
-  await vscode.workspace.fs.createDirectory(uri(path));
-}
-
-async function rm(path, recursive = false) {
-  await vscode.workspace.fs.delete(uri(path), { recursive });
-}
-
-async function cp(from, to) {
-  await vscode.workspace.fs.copy(uri(from), uri(to), { overwrite: true });
-}
-
-async function mv(from, to) {
-  await vscode.workspace.fs.rename(uri(from), uri(to), { overwrite: true });
-}
-
-function splitCommand(line) {
-  const result = [];
-  let current = '';
-  let quote = null;
-  let escape = false;
-
-  for (const char of line.trim()) {
-    if (escape) {
-      current += char;
-      escape = false;
-    } else if (char === '\\') {
-      escape = true;
-    } else if (quote) {
-      if (char === quote) quote = null;
-      else current += char;
-    } else if (char === '"' || char === "'") {
-      quote = char;
-    } else if (/\s/.test(char)) {
-      if (current) {
-        result.push(current);
-        current = '';
-      }
-    } else {
-      current += char;
-    }
-  }
-
-  if (current) result.push(current);
-  return result;
-}
-
-function makePty() {
-  let cwd = '/workspace';
-
-  const write = text => terminalPty?.write(text.replace(/\n/g, '\r\n'));
-  const prompt = () => write('\\x1b[32m' + cwd + '\\x1b[0m $ ');
-
-  async function execute(line) {
-    const args = splitCommand(line);
-    if (!args.length) {
-      prompt();
-      return;
-    }
-
-    const command = args.shift();
-
-    try {
-      switch (command) {
-        case 'help':
-          write('PythOnline terminal\n\nCommands: ls, cd, pwd, cat, mkdir, touch, rm, cp, mv, clear, echo, python\n');
-          break;
-
-        case 'pwd':
-          write(cwd + '\n');
-          break;
-
-        case 'clear':
-          output.fire('\\x1b[2J\\x1b[H');
-          break;
-
-        case 'echo':
-          write(args.join(' ') + '\n');
-          break;
-
-        case 'ls': {
-          const target = resolvePath(cwd, args[0] || '.');
-          const entries = await list(target);
-          write(entries.map(([name, type]) => type === vscode.FileType.Directory ? name + '/' : name).join('  ') + '\n');
-          break;
-        }
-
-        case 'cd': {
-          const target = resolvePath(cwd, args[0] || '/workspace');
-          if (!(await isDirectory(target))) throw new Error('cd: no such directory: ' + (args[0] || ''));
-          cwd = target;
-          break;
-        }
-
-        case 'cat':
-          for (const file of args) write(await readText(resolvePath(cwd, file)));
-          break;
-
-        case 'touch':
-          for (const file of args) {
-            const path = resolvePath(cwd, file);
-            if (!(await exists(path))) await writeText(path, '');
-          }
-          break;
-
-        case 'mkdir':
-          for (const dir of args) await mkdir(resolvePath(cwd, dir));
-          break;
-
-        case 'rm':
-          for (const file of args.filter(x => x !== '-r' && x !== '-R' && x !== '-rf')) {
-            const recursive = args.includes('-r') || args.includes('-R') || args.includes('-rf');
-            await rm(resolvePath(cwd, file), recursive);
-          }
-          break;
-
-        case 'cp':
-          if (args.length !== 2) throw new Error('usage: cp SOURCE DEST');
-          await cp(resolvePath(cwd, args[0]), resolvePath(cwd, args[1]));
-          break;
-
-        case 'mv':
-          if (args.length !== 2) throw new Error('usage: mv SOURCE DEST');
-          await mv(resolvePath(cwd, args[0]), resolvePath(cwd, args[1]));
-          break;
-
-        case 'python':
-        case 'python3':
-          if (!args.length) {
-            write('Interactive Python is coming with the Pyodide terminal bridge.\n');
-            break;
-          }
-          if (args.length !== 1 || !args[0].endsWith('.py')) {
-            throw new Error('usage: python FILE.py');
-          }
-          const result = await vscode.commands.executeCommand('pythonline.runPythonPath', resolvePath(cwd, args[0]));
-          if (result?.output) write(result.output);
-          if (result?.error) write(result.error);
-          break;
-
-        default:
-          write(command + ': command not found\n');
-      }
-    } catch (error) {
-      write((error?.message || String(error)) + '\n');
-    }
-
-    prompt();
-  }
-
+function createPty() {
   return {
-    onDidWrite: output.event,
+    onDidWrite: event => {
+      terminalPty.fire = event.fire;
+      return event.event;
+    },
     open() {
-      prompt();
+      void createSession().catch(error => {
+        terminalPty.fire('\\r\\nFailed to start BusyBox: ' + (error?.message || String(error)) + '\\r\\n');
+      });
     },
-    close() {},
+    close() {
+      try { session?.terminate(); } catch {}
+      try { worker?.terminate(); } catch {}
+      session = undefined;
+      worker = undefined;
+    },
     handleInput(data) {
-      if (data === '\\r' || data === '\\n') {
-        write('\\r\\n');
-        const line = terminalPty.buffer || '';
-        terminalPty.buffer = '';
-        void execute(line);
-      } else if (data === '\\u007f') {
-        if (terminalPty.buffer) {
-          terminalPty.buffer = terminalPty.buffer.slice(0, -1);
-          output.fire('\\b \\b');
-        }
-      } else if (data === '\\u0003') {
-        terminalPty.buffer = '';
-        write('^C\\n');
-        prompt();
-      } else if (data >= ' ' && data !== '\\x7f') {
-        terminalPty.buffer += data;
-        output.fire(data);
-      }
-    },
-    buffer: ''
+      if (!session) return;
+      session.write(data);
+      if (data.includes('\\x03')) session.interrupt();
+    }
   };
 }
 
@@ -238,7 +259,7 @@ async function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('pythonline.openTerminal', () => {
       if (!terminal) {
-        terminalPty = makePty();
+        terminalPty = createPty();
         terminal = vscode.window.createTerminal({
           name: 'PythOnline',
           pty: terminalPty
@@ -251,7 +272,6 @@ async function activate(context) {
     })
   );
 
-  // Open the terminal once on first activation.
   await vscode.commands.executeCommand('pythonline.openTerminal');
 }
 
