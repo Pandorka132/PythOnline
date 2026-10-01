@@ -229,16 +229,12 @@ async function createSession() {
   session.write('cd /workspace\\n');
 }
 
-let terminalPty;
-let terminalOutput;
-
 function createPty() {
+  terminalOutput = new vscode.EventEmitter();
   return {
-    onDidWrite: event => {
-      terminalPty.fire = event.fire;
-      return event.event;
-    },
+    onDidWrite: terminalOutput.event,
     open() {
+      terminalPty.fire = text => terminalOutput.fire(text);
       void createSession().catch(error => {
         terminalPty.fire('\\r\\nFailed to start BusyBox: ' + (error?.message || String(error)) + '\\r\\n');
       });
