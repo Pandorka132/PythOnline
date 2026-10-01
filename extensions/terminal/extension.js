@@ -127,7 +127,7 @@ function makePty() {
           break;
 
         case 'clear':
-          terminalPty.write('\\x1b[2J\\x1b[H');
+          output.fire('\\x1b[2J\\x1b[H');
           break;
 
         case 'echo':
@@ -205,7 +205,7 @@ function makePty() {
   }
 
   return {
-    onDidWrite: () => {},
+    onDidWrite: output.event,
     open() {
       prompt();
     },
@@ -219,7 +219,7 @@ function makePty() {
       } else if (data === '\\u007f') {
         if (terminalPty.buffer) {
           terminalPty.buffer = terminalPty.buffer.slice(0, -1);
-          terminalPty.write('\\b \\b');
+          output.fire('\\b \\b');
         }
       } else if (data === '\\u0003') {
         terminalPty.buffer = '';
@@ -227,7 +227,7 @@ function makePty() {
         prompt();
       } else if (data >= ' ' && data !== '\\x7f') {
         terminalPty.buffer += data;
-        terminalPty.write(data);
+        output.fire(data);
       }
     },
     buffer: ''
