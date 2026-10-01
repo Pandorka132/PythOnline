@@ -219,11 +219,11 @@ async function createSession() {
   });
 
   session.onError((error) => {
-    terminalPty.fire('\\r\\n[BusyBox] ' + (error?.message || String(error)) + '\\r\\n');
+    terminalPty.fire('\r\n[BusyBox] ' + (error?.message || String(error)) + '\r\n');
   });
 
   session.onExit((code) => {
-    terminalPty.fire('\\r\\n[BusyBox exited: ' + code + ']\\r\\n');
+    terminalPty.fire('\r\n[BusyBox exited: ' + code + ']\r\n');
   });
 
   session.write('cd /workspace\\n');
@@ -236,7 +236,7 @@ function createPty() {
     open() {
       terminalPty.fire = text => terminalOutput.fire(text);
       void createSession().catch(error => {
-        terminalPty.fire('\\r\\nFailed to start BusyBox: ' + (error?.message || String(error)) + '\\r\\n');
+        terminalPty.fire('\r\nFailed to start BusyBox: ' + (error?.message || String(error)) + '\r\n');
       });
     },
     close() {
@@ -248,7 +248,7 @@ function createPty() {
     handleInput(data) {
       if (!session) return;
       session.write(data);
-      if (data.includes('\\x03')) session.interrupt();
+      if (data.includes('\x03')) session.interrupt();
     }
   };
 }
