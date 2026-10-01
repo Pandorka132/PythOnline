@@ -1,6 +1,6 @@
 import { packageAllLocalExtensionsStream, packageMarketplaceExtensionsStream } from '../vscode/build/lib/extensions.ts';
 import { gulp } from '../vscode/build/lib/gulp/facade.ts';
-import es from 'event-stream';
+import es from '../vscode/node_modules/event-stream/index.js';
 import fs from 'fs';
 import path from 'path';
 
