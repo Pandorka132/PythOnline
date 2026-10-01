@@ -220,7 +220,7 @@ async function createSession() {
   });
 
   session.onOutput((bytes) => {
-    terminalPty.fire(new TextDecoder().decode(bytes));
+    terminalPty.fire(new TextDecoder().decode(bytes).replace(/\n/g, '\r\n'));
   });
 
   session.onError((error) => {
