@@ -76,7 +76,6 @@ required=(
   "$SITE/extensions/pythonline-browser-fs/package.nls.json"
   "$SITE/extensions/pythonline-pyodide-runtime/package.json"
   "$SITE/extensions/pythonline-pyodide-runtime/extension.js"
-  "$SITE/extensions/pythonline-pyodide-runtime/worker.js"
   "$SITE/extensions/theme-defaults/package.json"
   "$SITE/extensions/theme-seti/package.json"
 )
