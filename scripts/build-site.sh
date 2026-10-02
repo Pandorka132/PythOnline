@@ -52,6 +52,11 @@ mkdir -p "$SITE"
 cp -a "$OUT"/. "$SITE"/
 
 cp "$ROOT/coi-serviceworker.js" "$SITE/coi-serviceworker.js"
+cp "$ROOT/scripts/pyodide-runtime.html" "$SITE/pyodide-runtime.html"
+cp "$ROOT/scripts/pyodide-runtime.js" "$SITE/pyodide-runtime.js"
+cp "$ROOT/extensions/pyodide-runtime/worker.js" "$SITE/pyodide-runtime-worker.js"
+cp "$ROOT/scripts/busybox-runtime.html" "$SITE/busybox-runtime.html"
+cp "$ROOT/scripts/busybox-runtime.js" "$SITE/busybox-runtime.js"
 
 mkdir -p "$SITE/resources/server"
 cp -a "$VSCODE/resources/server/." "$SITE/resources/server/"

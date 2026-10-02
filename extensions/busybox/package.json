@@ -6,12 +6,22 @@
   "publisher": "Pandorka132",
   "engines": { "vscode": "^1.100.0" },
   "browser": "./extension.js",
-  "activationEvents": ["*"],
+  "activationEvents": [
+    "onTerminalProfile:pythonline.busybox"
+  ],
   "contributes": {
+    "terminal": {
+      "profiles": [
+        {
+          "title": "BusyBox",
+          "id": "pythonline.busybox"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "busybox.open",
-        "title": "BusyBox: Open Terminal",
+        "title": "BusyBox: New Terminal",
         "icon": "$(terminal)"
       }
     ]

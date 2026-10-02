@@ -53,13 +53,18 @@ configuration = {
             "path": "/extensions/pythonline-busybox",
         },
     ],
+    "enabledExtensions": [
+        "pandorka132.pythonline-browser-fs",
+        "pandorka132.pythonline-pyodide-runtime",
+        "pandorka132.pythonline-busybox",
+    ],
 }
 
 builtin_extensions_json = json.dumps(builtin_extensions, separators=(",", ":"))
 
 text = template.read_text(encoding="utf-8")
 
-coi_script = '<script src="./coi-serviceworker.js"></script>'
+coi_script = '<script>window.coi = { coepCredentialless: () => true, coepDegrade: () => false };</script>\n<script src="./coi-serviceworker.js"></script>'
 
 
 

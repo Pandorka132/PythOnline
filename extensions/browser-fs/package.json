@@ -9,7 +9,7 @@
   },
   "browser": "./extension.js",
   "activationEvents": [
-    "*"
+    "onFileSystem:pythonline"
   ],
   "contributes": {
     "commands": [

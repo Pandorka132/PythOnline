@@ -2,7 +2,7 @@
   "name": "pythonline-pyodide-runtime",
   "displayName": "PythOnline Python Runtime (Pyodide)",
   "description": "Browser Python runtime powered by Pyodide.",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "publisher": "Pandorka132",
   "engines": {
     "vscode": "^1.100.0"

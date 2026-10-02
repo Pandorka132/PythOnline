@@ -126,13 +126,121 @@ async function execute(context, code) {
   if (result.error) throw new Error(result.error);
 }
 
+async function executeInteractive(context, code, fileName) {
+  const inputQueue = [];
+  let inputLine = "";
+  let waitingForInput = false;
+  let worker;
+  let closed = false;
+
+  const writeEmitter = new vscode.EventEmitter();
+  let ptyOpen = false;
+  const pendingOutput = [];
+
+  const write = text => {
+    if (ptyOpen) writeEmitter.fire(text);
+    else pendingOutput.push(text);
+  };
+
+  function flushInput() {
+    if (closed || !waitingForInput || !inputQueue.length) return;
+    const line = inputQueue.shift();
+    waitingForInput = false;
+    worker?.postMessage({ type: "stdin", data: line });
+  }
+
+  const pty = {
+    onDidWrite: writeEmitter.event,
+    open: () => {
+      ptyOpen = true;
+      for (const text of pendingOutput.splice(0)) writeEmitter.fire(text);
+    },
+    close: () => {
+      closed = true;
+      worker?.terminate();
+    },
+    handleInput: data => {
+      if (closed) return;
+
+      for (const char of data) {
+        if (char === "\r" || char === "\n") {
+          writeEmitter.fire("\r\n");
+          inputQueue.push(inputLine + "\n");
+          inputLine = "";
+          flushInput();
+        } else if (char === "\x7f" || char === "\b") {
+          if (inputLine.length) {
+            inputLine = inputLine.slice(0, -1);
+            writeEmitter.fire("\b \b");
+          }
+        } else if (char === "\x03") {
+          writeEmitter.fire("^C\r\n");
+          inputQueue.push("\x03");
+          inputLine = "";
+          flushInput();
+        } else if (char >= " ") {
+          inputLine += char;
+          writeEmitter.fire(char);
+        }
+      }
+    }
+  };
+
+  const terminal = vscode.window.createTerminal({
+    name: "Run: " + (fileName || "Python"),
+    pty,
+    isTransient: true
+  });
+  terminal.show(true);
+  writeEmitter.fire("\x1b[2J\x1b[H");
+  writeEmitter.fire("[PythOnline] " + (fileName || "Python") + "\r\n");
+  writeEmitter.fire("[Pyodide] Worker indítása…\r\n");
+
+  const workerUrl = vscode.Uri.joinPath(context.extensionUri, "worker.js").toString(true);
+  try {
+    worker = new Worker(workerUrl, { type: "module" });
+  } catch (error) {
+    writeEmitter.fire("[Worker létrehozási hiba] " + (error?.stack || error?.message || String(error)) + "\r\n");
+    return;
+  }
+
+  worker.onmessage = event => {
+    const message = event.data || {};
+    if (message.type === "output") {
+      writeEmitter.fire(String(message.text || "").replace(/\n/g, "\r\n"));
+    } else if (message.type === "stdinRequest") {
+      waitingForInput = true;
+      flushInput();
+    } else if (message.type === "done") {
+      if (message.ok) writeEmitter.fire("\r\n[Process exited with code 0]\r\n");
+      else writeEmitter.fire("\r\n" + message.error + "\r\n[Process exited with code 1]\r\n");
+      worker.terminate();
+    } else if (message.ready) {
+      writeEmitter.fire("[Pyodide] Runtime kész.\r\n");
+    } else if (message.error && message.id === 0) {
+      writeEmitter.fire("\r\n[Pyodide hiba] " + message.error + "\r\n");
+    }
+  };
+
+  worker.onerror = event => {
+    writeEmitter.fire("\r\n[Worker hiba] " + (event.message || "ismeretlen hiba") + "\r\n");
+  };
+
+  worker.onmessageerror = () => {
+    writeEmitter.fire("\r\n[Worker üzenethiba]\r\n");
+  };
+
+  writeEmitter.fire("[Pyodide] Futtatás indítása…\r\n");
+  worker.postMessage({ type: "runInteractive", code });
+}
+
 async function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand("pythonline.runPythonFile", async () => {
       try {
         const editor = vscode.window.activeTextEditor;
         if (!editor) throw new Error("Nincs megnyitott Python fájl.");
-        await execute(context, editor.document.getText());
+        await executeInteractive(context, editor.document.getText(), editor.document.fileName.split("/").pop());
       } catch (error) {
         vscode.window.showErrorMessage("Python futtatási hiba: " + error.message);
       }
@@ -147,7 +255,7 @@ async function activate(context) {
       try {
         const editor = vscode.window.activeTextEditor;
         if (!editor || editor.selection.isEmpty) throw new Error("Jelölj ki egy Python kódrészletet.");
-        await execute(context, editor.document.getText(editor.selection));
+        await executeInteractive(context, editor.document.getText(editor.selection), editor.document.fileName.split("/").pop() + " (selection)");
       } catch (error) {
         vscode.window.showErrorMessage("Python futtatási hiba: " + error.message);
       }

@@ -73,6 +73,52 @@ async function runPython(code) {
   return { output, error };
 }
 
+function createInteractiveInput() {
+  return new Promise(resolve => {
+    self.__pyodideInputResolver = resolve;
+    self.postMessage({ type: "stdinRequest" });
+  });
+}
+
+async function runInteractive(code) {
+  self.postMessage({ type: "output", stream: "stdout", text: "[Pyodide] Runtime betöltése…\\n" });
+  const pyodide = await runtime();
+  self.postMessage({ type: "output", stream: "stdout", text: "[Pyodide] Runtime betöltve.\\n" });
+
+  self.__pyodideInputResolver = null;
+  self.__pyodideReadLine = createInteractiveInput;
+
+  pyodide.setStdout({ batched: text => self.postMessage({ type: "output", stream: "stdout", text }) });
+  pyodide.setStderr({ batched: text => self.postMessage({ type: "output", stream: "stderr", text }) });
+
+  await pyodide.runPythonAsync(`
+from pyodide.ffi import run_sync
+from js import __pyodideReadLine
+import builtins
+
+def _pyodide_input(prompt=""):
+    if prompt:
+        print(prompt, end="", flush=True)
+    return str(run_sync(__pyodideReadLine()))
+
+builtins.input = _pyodide_input
+`);
+
+  try {
+    const result = await pyodide.runPythonAsync(code);
+    if (result !== undefined && result !== null) {
+      self.postMessage({ type: "output", stream: "stdout", text: String(result) });
+    }
+    self.postMessage({ type: "done", ok: true });
+  } catch (exception) {
+    self.postMessage({
+      type: "done",
+      ok: false,
+      error: exception && exception.stack ? exception.stack : String(exception)
+    });
+  }
+}
+
 async function installPackage(spec) {
   const pyodide = await runtime();
   await pyodide.loadPackage("micropip");
@@ -93,9 +139,18 @@ async function listPackages() {
 
 self.onmessage = async event => {
   const { id, type } = event.data;
+
+  if (type === "stdin") {
+    const resolver = self.__pyodideInputResolver;
+    self.__pyodideInputResolver = null;
+    resolver?.(String(event.data.data ?? ""));
+    return;
+  }
+
   try {
     let result;
     if (type === "run") result = await runPython(event.data.code);
+    else if (type === "runInteractive") result = await runInteractive(event.data.code);
     else if (type === "install") result = await installPackage(event.data.spec);
     else if (type === "version") result = pyodideVersion(await runtime());
     else if (type === "packages") result = await listPackages();
