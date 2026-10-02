@@ -7,7 +7,7 @@
   "engines": { "vscode": "^1.100.0" },
   "browser": "./extension.js",
   "activationEvents": [
-    "onTerminalProfile:pythonline.busybox"
+    "*"
   ],
   "contributes": {
     "terminal": {

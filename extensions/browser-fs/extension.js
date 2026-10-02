@@ -357,12 +357,29 @@ async function activate(context) {
     })
   );
 
-  // Open the persistent browser workspace after the provider is registered.
+  // VS Code can validate workspace folders slightly before the file-system
+  // provider becomes visible to the workbench. Retry the workspace attach
+  // instead of letting that startup race abort extension activation.
   if (!vscode.workspace.workspaceFolders?.length) {
-    await vscode.workspace.updateWorkspaceFolders(0, 0, {
-      uri: vscode.Uri.parse('pythonline:/workspace'),
-      name: 'PythOnline'
-    });
+    const workspaceUri = vscode.Uri.parse('pythonline:/workspace');
+    let attached = false;
+    let lastError;
+
+    for (let attempt = 0; attempt < 20 && !attached; attempt++) {
+      try {
+        attached = vscode.workspace.updateWorkspaceFolders(0, 0, {
+          uri: workspaceUri,
+          name: 'PythOnline'
+        });
+      } catch (error) {
+        lastError = error;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+
+    if (!attached && lastError) {
+      console.warn('[PythOnline FS] Workspace attach is still pending:', lastError);
+    }
   }
 
   context.subscriptions.push(

@@ -94,7 +94,9 @@ function createInteractiveInput() {
   Atomics.wait(inputControl, 0, 0);
 
   const length = Atomics.load(inputControl, 1);
-  const text = new TextDecoder().decode(inputBytes.subarray(0, length));
+  // TextDecoder refuses SharedArrayBuffer-backed views. Copy the bytes into
+  // a normal ArrayBuffer before decoding them.
+  const text = new TextDecoder().decode(inputBytes.slice(0, length));
 
   Atomics.store(inputControl, 1, 0);
   Atomics.store(inputControl, 0, 0);
