@@ -77,6 +77,16 @@ jobs:
           echo "npm ci failed after 3 attempts"
           exit 1
 
+      - name: Prepare VS Code generated assets
+        working-directory: vscode
+        run: |
+          # codicon.ttf is intentionally gitignored by VS Code and is normally
+          # copied from the @vscode/codicons npm package by this build task.
+          # The server-web bundler imports codicon.css directly, so ensure the
+          # generated font exists before bundling.
+          npm run gulp copy-codicons
+          test -s src/vs/base/browser/ui/codicons/codicon/codicon.ttf
+
       - name: Build and package PythOnline
         run: ./site.sh
 
