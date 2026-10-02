@@ -16,6 +16,17 @@ let jumps = 0;
 let minX = Infinity;
 let maxX = -Infinity;
 
+// Fabric registry sync completion used by the server during configuration.
+bot._client.on('custom_payload', packet => {
+  if (packet.channel === 'fabric:registry/sync') {
+    bot._client.write('custom_payload', {
+      channel: 'fabric:registry/sync/complete',
+      data: Buffer.alloc(0)
+    });
+    console.log('FABRIC_REGISTRY_SYNC_COMPLETE');
+  }
+});
+
 function pos(tag) {
   if (!bot.entity) return;
   const p = bot.entity.position;

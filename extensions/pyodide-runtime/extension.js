@@ -153,7 +153,7 @@ async function executeInteractive(context, code, fileName) {
     onDidWrite: writeEmitter.event,
     open: () => {
       ptyOpen = true;
-      for (const text of pendingOutput.splice(0)) writeEmitter.fire(text);
+      for (const text of pendingOutput.splice(0)) write(text);
     },
     close: () => {
       closed = true;
@@ -164,23 +164,23 @@ async function executeInteractive(context, code, fileName) {
 
       for (const char of data) {
         if (char === "\r" || char === "\n") {
-          writeEmitter.fire("\r\n");
+          write("\r\n");
           inputQueue.push(inputLine + "\n");
           inputLine = "";
           flushInput();
         } else if (char === "\x7f" || char === "\b") {
           if (inputLine.length) {
             inputLine = inputLine.slice(0, -1);
-            writeEmitter.fire("\b \b");
+            write("\b \b");
           }
         } else if (char === "\x03") {
-          writeEmitter.fire("^C\r\n");
+          write("^C\r\n");
           inputQueue.push("\x03");
           inputLine = "";
           flushInput();
         } else if (char >= " ") {
           inputLine += char;
-          writeEmitter.fire(char);
+          write(char);
         }
       }
     }
@@ -192,45 +192,45 @@ async function executeInteractive(context, code, fileName) {
     isTransient: true
   });
   terminal.show(true);
-  writeEmitter.fire("\x1b[2J\x1b[H");
-  writeEmitter.fire("[PythOnline] " + (fileName || "Python") + "\r\n");
-  writeEmitter.fire("[Pyodide] Worker indítása…\r\n");
+  write("\x1b[2J\x1b[H");
+  write("[PythOnline] " + (fileName || "Python") + "\r\n");
+  write("[Pyodide] Worker indítása…\r\n");
 
   const workerUrl = vscode.Uri.joinPath(context.extensionUri, "worker.js").toString(true);
   try {
     worker = new Worker(workerUrl, { type: "module" });
   } catch (error) {
-    writeEmitter.fire("[Worker létrehozási hiba] " + (error?.stack || error?.message || String(error)) + "\r\n");
+    write("[Worker létrehozási hiba] " + (error?.stack || error?.message || String(error)) + "\r\n");
     return;
   }
 
   worker.onmessage = event => {
     const message = event.data || {};
     if (message.type === "output") {
-      writeEmitter.fire(String(message.text || "").replace(/\n/g, "\r\n"));
+      write(String(message.text || "").replace(/\n/g, "\r\n"));
     } else if (message.type === "stdinRequest") {
       waitingForInput = true;
       flushInput();
     } else if (message.type === "done") {
-      if (message.ok) writeEmitter.fire("\r\n[Process exited with code 0]\r\n");
-      else writeEmitter.fire("\r\n" + message.error + "\r\n[Process exited with code 1]\r\n");
+      if (message.ok) write("\r\n[Process exited with code 0]\r\n");
+      else write("\r\n" + message.error + "\r\n[Process exited with code 1]\r\n");
       worker.terminate();
     } else if (message.ready) {
-      writeEmitter.fire("[Pyodide] Runtime kész.\r\n");
+      write("[Pyodide] Runtime kész.\r\n");
     } else if (message.error && message.id === 0) {
-      writeEmitter.fire("\r\n[Pyodide hiba] " + message.error + "\r\n");
+      write("\r\n[Pyodide hiba] " + message.error + "\r\n");
     }
   };
 
   worker.onerror = event => {
-    writeEmitter.fire("\r\n[Worker hiba] " + (event.message || "ismeretlen hiba") + "\r\n");
+    write("\r\n[Worker hiba] " + (event.message || "ismeretlen hiba") + "\r\n");
   };
 
   worker.onmessageerror = () => {
-    writeEmitter.fire("\r\n[Worker üzenethiba]\r\n");
+    write("\r\n[Worker üzenethiba]\r\n");
   };
 
-  writeEmitter.fire("[Pyodide] Futtatás indítása…\r\n");
+  write("[Pyodide] Futtatás indítása…\r\n");
   worker.postMessage({ type: "runInteractive", code });
 }
 
