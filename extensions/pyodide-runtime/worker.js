@@ -73,33 +73,71 @@ async function runPython(code) {
   return { output, error };
 }
 
+let inputControl = null;
+let inputBytes = null;
+
+function setupInteractiveInput(buffer) {
+  if (!buffer) return;
+  inputControl = new Int32Array(buffer, 0, 2);
+  inputBytes = new Uint8Array(buffer, 8);
+}
+
 function createInteractiveInput() {
-  return new Promise(resolve => {
-    self.__pyodideInputResolver = resolve;
-    self.postMessage({ type: "stdinRequest" });
-  });
+  if (!inputControl || !inputBytes) {
+    throw new Error("Interactive input requires SharedArrayBuffer support.");
+  }
+
+  self.postMessage({ type: "stdinRequest" });
+
+  // The worker may block here: the Run terminal's thread is the main thread,
+  // which writes the answer into the shared buffer and wakes us with Atomics.notify().
+  Atomics.wait(inputControl, 0, 0);
+
+  const length = Atomics.load(inputControl, 1);
+  const text = new TextDecoder().decode(inputBytes.subarray(0, length));
+
+  Atomics.store(inputControl, 1, 0);
+  Atomics.store(inputControl, 0, 0);
+  return text;
 }
 
 async function runInteractive(code) {
-  self.postMessage({ type: "output", stream: "stdout", text: "[Pyodide] Runtime betöltése…\\n" });
+  setupInteractiveInput(self.__pyodideInputBuffer);
+  self.postMessage({ type: "status", text: "Pyodide betöltése…" });
   const pyodide = await runtime();
-  self.postMessage({ type: "output", stream: "stdout", text: "[Pyodide] Runtime betöltve.\\n" });
+  self.postMessage({ type: "status", text: "Python program futtatása…" });
 
   self.__pyodideInputResolver = null;
   self.__pyodideReadLine = createInteractiveInput;
 
-  pyodide.setStdout({ batched: text => self.postMessage({ type: "output", stream: "stdout", text }) });
-  pyodide.setStderr({ batched: text => self.postMessage({ type: "output", stream: "stderr", text }) });
+  // `input()` can block the Python coroutine before a line ending is emitted.
+  // Use Pyodide's raw stream so prompts such as `input("Mi a neved? ")`
+  // reach the Run terminal immediately, before waiting for stdin.
+  const stdoutDecoder = new TextDecoder();
+  const stderrDecoder = new TextDecoder();
+  pyodide.setStdout({
+    raw: byte => {
+      const text = stdoutDecoder.decode(new Uint8Array([byte]), { stream: true });
+      if (text) self.postMessage({ type: "output", stream: "stdout", text });
+    }
+  });
+  pyodide.setStderr({
+    raw: byte => {
+      const text = stderrDecoder.decode(new Uint8Array([byte]), { stream: true });
+      if (text) self.postMessage({ type: "output", stream: "stderr", text });
+    }
+  });
 
+  // Keep normal Python input() semantics. The actual wait happens in this
+  // worker using shared memory, so the UI/main thread remains responsive.
   await pyodide.runPythonAsync(`
-from pyodide.ffi import run_sync
 from js import __pyodideReadLine
 import builtins
 
 def _pyodide_input(prompt=""):
     if prompt:
         print(prompt, end="", flush=True)
-    return str(run_sync(__pyodideReadLine()))
+    return str(__pyodideReadLine())
 
 builtins.input = _pyodide_input
 `);

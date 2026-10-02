@@ -127,11 +127,23 @@ async function execute(context, code) {
 }
 
 async function executeInteractive(context, code, fileName) {
+  return vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: "Python futtatása" },
+    async progress => {
   const inputQueue = [];
   let inputLine = "";
   let waitingForInput = false;
   let worker;
   let closed = false;
+
+  let inputBuffer = null;
+  let inputControl = null;
+  let inputBytes = null;
+  if (typeof SharedArrayBuffer === "function") {
+    inputBuffer = new SharedArrayBuffer(8 + 65536);
+    inputControl = new Int32Array(inputBuffer, 0, 2);
+    inputBytes = new Uint8Array(inputBuffer, 8);
+  }
 
   const writeEmitter = new vscode.EventEmitter();
   let ptyOpen = false;
@@ -146,7 +158,23 @@ async function executeInteractive(context, code, fileName) {
     if (closed || !waitingForInput || !inputQueue.length) return;
     const line = inputQueue.shift();
     waitingForInput = false;
-    worker?.postMessage({ type: "stdin", data: line });
+
+    if (!inputControl || !inputBytes) {
+      write("\r\n[Input hiba] A böngésző nem támogatja a SharedArrayBuffer input csatornát.\r\n");
+      return;
+    }
+
+    const bytes = new TextEncoder().encode(line);
+    if (bytes.length > inputBytes.length) {
+      write("\r\n[Input hiba] A bemenet túl hosszú.\r\n");
+      return;
+    }
+
+    inputBytes.fill(0);
+    inputBytes.set(bytes);
+    Atomics.store(inputControl, 1, bytes.length);
+    Atomics.store(inputControl, 0, 1);
+    Atomics.notify(inputControl, 0, 1);
   }
 
   const pty = {
@@ -193,45 +221,59 @@ async function executeInteractive(context, code, fileName) {
   });
   terminal.show(true);
   write("\x1b[2J\x1b[H");
-  write("[PythOnline] " + (fileName || "Python") + "\r\n");
-  write("[Pyodide] Worker indítása…\r\n");
+  progress.report({ message: "Pyodide inicializálása…" });
 
   const workerUrl = vscode.Uri.joinPath(context.extensionUri, "worker.js").toString(true);
   try {
-    worker = new Worker(workerUrl, { type: "module" });
+    const bootstrapUrl = vscode.Uri.joinPath(context.extensionUri, "worker-bootstrap.js").toString(true);
+    worker = new Worker(bootstrapUrl);
+    if (!inputBuffer) {
+      write("\r\n[Input hiba] A böngésző nem cross-origin isolated, ezért az interaktív input nem használható.\r\n");
+      worker.terminate();
+      return;
+    }
+    worker.postMessage({ type: "load", url: workerUrl, inputBuffer });
   } catch (error) {
-    write("[Worker létrehozási hiba] " + (error?.stack || error?.message || String(error)) + "\r\n");
+    write("\r\n[Worker hiba] " + (error?.stack || error?.message || String(error)) + "\r\n");
     return;
   }
 
-  worker.onmessage = event => {
-    const message = event.data || {};
-    if (message.type === "output") {
-      write(String(message.text || "").replace(/\n/g, "\r\n"));
-    } else if (message.type === "stdinRequest") {
-      waitingForInput = true;
-      flushInput();
-    } else if (message.type === "done") {
-      if (message.ok) write("\r\n[Process exited with code 0]\r\n");
-      else write("\r\n" + message.error + "\r\n[Process exited with code 1]\r\n");
-      worker.terminate();
-    } else if (message.ready) {
-      write("[Pyodide] Runtime kész.\r\n");
-    } else if (message.error && message.id === 0) {
-      write("\r\n[Pyodide hiba] " + message.error + "\r\n");
+  await new Promise(resolve => {
+    const finish = () => resolve();
+    const previousMessage = worker.onmessage;
+    worker.onmessage = event => {
+      const message = event.data || {};
+      if (message.type === "status") {
+        progress.report({ message: message.text });
+        return;
+      }
+      if (message.type === "done") {
+        if (message.ok) write("\r\n[Process exited with code 0]\r\n");
+        else write("\r\n" + message.error + "\r\n[Process exited with code 1]\r\n");
+        worker.terminate();
+        finish();
+        return;
+      }
+      if (message.type === "output") {
+        write(String(message.text || "").replace(/\n/g, "\r\n"));
+      } else if (message.type === "stdinRequest") {
+        waitingForInput = true;
+        flushInput();
+      }
+    };
+    worker.onerror = event => {
+      write("\r\n[Worker hiba] " + (event.message || "ismeretlen hiba") + "\r\n");
+      finish();
+    };
+    worker.onmessageerror = () => {
+      write("\r\n[Worker üzenethiba]\r\n");
+      finish();
+    };
+    progress.report({ message: "Python program indítása…" });
+    worker.postMessage({ type: "runInteractive", code });
+  });
     }
-  };
-
-  worker.onerror = event => {
-    write("\r\n[Worker hiba] " + (event.message || "ismeretlen hiba") + "\r\n");
-  };
-
-  worker.onmessageerror = () => {
-    write("\r\n[Worker üzenethiba]\r\n");
-  };
-
-  write("[Pyodide] Futtatás indítása…\r\n");
-  worker.postMessage({ type: "runInteractive", code });
+  );
 }
 
 async function activate(context) {

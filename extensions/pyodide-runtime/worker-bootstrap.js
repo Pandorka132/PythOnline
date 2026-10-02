@@ -1,9 +1,39 @@
-self.addEventListener("message", async event => {
-  if (event.data?.type !== "load") return;
-  try {
-    const module = await import(event.data.url);
-    module.init(event.data.inputSab);
-  } catch (error) {
-    self.postMessage({type:"error", id:0, error:error?.stack || String(error)});
+let loaded = false;
+let loading = false;
+const queuedMessages = [];
+
+async function handleMessage(event) {
+  if (loaded) {
+    self.onmessage?.(event);
+    return;
   }
-});
+
+  if (event.data?.type !== "load") {
+    queuedMessages.push(event);
+    return;
+  }
+
+  if (loading) return;
+  loading = true;
+
+  try {
+    if (event.data.inputBuffer) {
+      self.__pyodideInputBuffer = event.data.inputBuffer;
+    }
+    await import(event.data.url);
+    loaded = true;
+
+    self.removeEventListener("message", handleMessage);
+
+    for (const queued of queuedMessages.splice(0)) {
+      self.onmessage?.(queued);
+    }
+  } catch (error) {
+    self.postMessage({
+      type: "workerBootstrapError",
+      error: error?.stack || String(error)
+    });
+  }
+}
+
+self.addEventListener("message", handleMessage);
