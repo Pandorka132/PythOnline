@@ -14,7 +14,7 @@ if not template.is_file():
 
 builtin_extensions = []
 for extension_dir in sorted((site / "extensions").iterdir()):
-    if not extension_dir.is_dir() or extension_dir.name == "pythonline-browser-fs":
+    if not extension_dir.is_dir():
         continue
     package_json = extension_dir / "package.json"
     if not package_json.is_file():
