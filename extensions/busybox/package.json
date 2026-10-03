@@ -23,6 +23,11 @@
         "command": "busybox.open",
         "title": "BusyBox: New Terminal",
         "icon": "$(terminal)"
+      },
+      {
+        "command": "busybox.showDebug",
+        "title": "BusyBox: Show Debug",
+        "icon": "$(output)"
       }
     ]
   }

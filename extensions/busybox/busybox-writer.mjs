@@ -1,4 +1,4 @@
-import { memoryFs, journalWriter } from 'https://cdn.jsdelivr.net/npm/wasi-sh@0.11.0/src/fs.mjs';
+import { memoryFs, journalWriter } from 'https://cdn.jsdelivr.net/gh/alganet/wasi-sh@main/src/fs.mjs';
 
 let writer;
 

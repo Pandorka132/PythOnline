@@ -8,6 +8,62 @@ const STORE = "state";
 
 let runtimePromise;
 let installed = new Set();
+let runTerminal;
+let runWriteEmitter;
+let runPtyOpen = false;
+let activeRun = null;
+let pythonWorker = null;
+let pythonWorkerReady = false;
+let pythonWorkerBlobUrl = null;
+
+async function warmupPythonWorker(context) {
+  if (pythonWorker) return;
+
+  const workerUrl = vscode.Uri.joinPath(context.extensionUri, "worker.js").toString(true);
+  try {
+    const worker = await createPythonWorker(workerUrl);
+    if (pythonWorker) {
+      worker.terminate();
+      return;
+    }
+
+    pythonWorker = worker;
+    pythonWorkerReady = false;
+
+    worker.onmessage = event => {
+      const message = event.data || {};
+      if (message.ready) {
+        pythonWorkerReady = true;
+      }
+    };
+
+    worker.onerror = event => {
+      if (pythonWorker === worker) {
+        pythonWorker = null;
+        pythonWorkerReady = false;
+      }
+      if (pythonWorkerBlobUrl) {
+        URL.revokeObjectURL(pythonWorkerBlobUrl);
+        pythonWorkerBlobUrl = null;
+      }
+      console.warn("Pyodide worker warmup failed", event.message || event);
+    };
+
+    worker.onmessageerror = () => {
+      if (pythonWorker === worker) {
+        pythonWorker = null;
+        pythonWorkerReady = false;
+      }
+      if (pythonWorkerBlobUrl) {
+        URL.revokeObjectURL(pythonWorkerBlobUrl);
+        pythonWorkerBlobUrl = null;
+      }
+      console.warn("Pyodide worker warmup message error");
+    };
+  } catch (error) {
+    console.warn("Pyodide worker warmup failed", error);
+  }
+}
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -107,6 +163,67 @@ async function readWorkspaceFile(path) {
   return new TextDecoder().decode(bytes);
 }
 
+async function collectPythonFiles(uri, basePath = "") {
+  const files = [];
+  const entries = await vscode.workspace.fs.readDirectory(uri);
+  for (const [name, type] of entries) {
+    const child = vscode.Uri.joinPath(uri, name);
+    const relative = basePath ? basePath + "/" + name : name;
+    if (type === vscode.FileType.Directory) {
+      files.push(...await collectPythonFiles(child, relative));
+    } else if (type === vscode.FileType.File && name.endsWith(".py")) {
+      const bytes = await vscode.workspace.fs.readFile(child);
+      files.push({ path: "/workspace/" + relative, bytes: Array.from(bytes) });
+    }
+  }
+  return files;
+}
+
+async function collectPythonWorkspace() {
+  return collectPythonFiles(vscode.Uri.parse("pythonline:/workspace"));
+}
+
+async function collectBrowserWorkspaceEntries() {
+  const entries = [];
+
+  async function walk(uri) {
+    for (const [name, type] of await vscode.workspace.fs.readDirectory(uri)) {
+      const child = vscode.Uri.joinPath(uri, name);
+      if (type === vscode.FileType.Directory) {
+        entries.push({ path: child.path, type: "directory" });
+        await walk(child);
+      } else if (type === vscode.FileType.File) {
+        entries.push({ path: child.path, type: "file", data: Array.from(await vscode.workspace.fs.readFile(child)) });
+      }
+    }
+  }
+
+  await walk(vscode.Uri.parse("pythonline:/workspace"));
+  return entries;
+}
+
+async function syncWorkspaceFromPython(entries) {
+  const normalized = new Map((entries || []).map(entry => [entry.path, entry]));
+  const existing = await collectBrowserWorkspaceEntries();
+
+  for (const entry of [...normalized.values()].filter(entry => entry.type === "directory").sort((a, b) => a.path.length - b.path.length)) {
+    await vscode.workspace.fs.createDirectory(vscode.Uri.parse("pythonline:" + entry.path));
+  }
+
+  for (const entry of normalized.values()) {
+    if (entry.type !== "file") continue;
+    await vscode.workspace.fs.writeFile(vscode.Uri.parse("pythonline:" + entry.path), new Uint8Array(entry.data || []));
+  }
+
+  const toDelete = existing.filter(entry => !normalized.has(entry.path));
+  for (const entry of toDelete.filter(entry => entry.type === "file")) {
+    await vscode.workspace.fs.delete(vscode.Uri.parse("pythonline:" + entry.path));
+  }
+  for (const entry of toDelete.filter(entry => entry.type === "directory").sort((a, b) => b.path.length - a.path.length)) {
+    await vscode.workspace.fs.delete(vscode.Uri.parse("pythonline:" + entry.path), { recursive: true });
+  }
+}
+
 async function executeResult(code) {
   return runPython(code);
 }
@@ -126,10 +243,63 @@ async function execute(context, code) {
   if (result.error) throw new Error(result.error);
 }
 
-async function executeInteractive(context, code, fileName) {
-  return vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: "Python futtatása" },
-    async progress => {
+async function createPythonWorker(workerUrl) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  let response;
+  try {
+    response = await fetch(workerUrl, {
+      cache: "no-store",
+      credentials: "same-origin",
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("worker.js betöltése 15 másodperc után időtúllépéssel leállt");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+  if (!response.ok) {
+    throw new Error("worker.js HTTP " + response.status);
+  }
+
+  const source = await response.text();
+  if (!source.trim()) {
+    throw new Error("worker.js üres választ adott");
+  }
+
+  const blob = new Blob([source], { type: "text/javascript" });
+  const blobUrl = URL.createObjectURL(blob);
+  try {
+    const worker = new Worker(blobUrl);
+    pythonWorkerBlobUrl = blobUrl;
+    return worker;
+  } catch (error) {
+    URL.revokeObjectURL(blobUrl);
+    throw error;
+  }
+}
+
+async function executeInteractive(context, code, fileName, filePath) {
+  if (activeRun && !activeRun.finished) {
+    activeRun.closed = true;
+    activeRun.worker?.terminate();
+    if (activeRun.worker === pythonWorker) {
+      pythonWorker = null;
+      pythonWorkerReady = false;
+    }
+  }
+
+  // Keep the same Run terminal between executions. The PTY forwards input to
+  // activeRun, so replacing activeRun is enough to run a new program in the
+  // already-open terminal without recreating it.
+  if (!runTerminal) {
+    runWriteEmitter = new vscode.EventEmitter();
+    runPtyOpen = false;
+  }
+
   const inputQueue = [];
   let inputLine = "";
   let waitingForInput = false;
@@ -145,12 +315,11 @@ async function executeInteractive(context, code, fileName) {
     inputBytes = new Uint8Array(inputBuffer, 8);
   }
 
-  const writeEmitter = new vscode.EventEmitter();
-  let ptyOpen = false;
+  const writeEmitter = runWriteEmitter;
   const pendingOutput = [];
 
   const write = text => {
-    if (ptyOpen) writeEmitter.fire(text);
+    if (runPtyOpen) writeEmitter.fire(text);
     else pendingOutput.push(text);
   };
 
@@ -177,62 +346,115 @@ async function executeInteractive(context, code, fileName) {
     Atomics.notify(inputControl, 0, 1);
   }
 
-  const pty = {
-    onDidWrite: writeEmitter.event,
-    open: () => {
-      ptyOpen = true;
-      for (const text of pendingOutput.splice(0)) write(text);
-    },
-    close: () => {
-      closed = true;
-      worker?.terminate();
-    },
-    handleInput: data => {
-      if (closed) return;
-
-      for (const char of data) {
-        if (char === "\r" || char === "\n") {
-          write("\r\n");
-          inputQueue.push(inputLine + "\n");
-          inputLine = "";
-          flushInput();
-        } else if (char === "\x7f" || char === "\b") {
-          if (inputLine.length) {
-            inputLine = inputLine.slice(0, -1);
-            write("\b \b");
-          }
-        } else if (char === "\x03") {
-          write("^C\r\n");
-          inputQueue.push("\x03");
-          inputLine = "";
-          flushInput();
-        } else if (char >= " ") {
-          inputLine += char;
-          write(char);
-        }
-      }
-    }
+  activeRun = {
+    worker: pythonWorker,
+    closed: false,
+    finished: false,
+    inputQueue,
+    get inputLine() { return inputLine; },
+    set inputLine(value) { inputLine = value; },
+    write,
+    flushInput
   };
 
-  const terminal = vscode.window.createTerminal({
-    name: "Run: " + (fileName || "Python"),
-    pty,
-    isTransient: true
-  });
-  terminal.show(true);
+  if (!runTerminal) {
+    const pty = {
+      onDidWrite: writeEmitter.event,
+      open: () => {
+        runPtyOpen = true;
+        for (const text of pendingOutput.splice(0)) writeEmitter.fire(text);
+      },
+      close: () => {
+        // The transient Run terminal is disposed when starting the next run.
+        // Do not kill the persistent Pyodide worker after a completed run;
+        // otherwise the next Run would reuse a terminated Worker and wait
+        // forever at "Pyodide betöltése…".
+        if (activeRun && !activeRun.finished) {
+          activeRun.closed = true;
+          if (activeRun.worker === pythonWorker) {
+            activeRun.worker.terminate();
+            pythonWorker = null;
+            pythonWorkerReady = false;
+            if (pythonWorkerBlobUrl) {
+              URL.revokeObjectURL(pythonWorkerBlobUrl);
+              pythonWorkerBlobUrl = null;
+            }
+          } else {
+            activeRun.worker?.terminate();
+          }
+        }
+      },
+      handleInput: data => {
+        const run = activeRun;
+        if (!run || run.closed) return;
+
+        for (const char of data) {
+          if (char === "\r" || char === "\n") {
+            run.write("\r\n");
+            run.inputQueue.push(run.inputLine + "\n");
+            run.inputLine = "";
+            run.flushInput();
+          } else if (char === "\x7f" || char === "\b") {
+            if (run.inputLine.length) {
+              run.inputLine = run.inputLine.slice(0, -1);
+              run.write("\b \b");
+            }
+          } else if (char === "\x03") {
+            run.write("^C\r\n");
+            run.inputQueue.push("\x03");
+            run.inputLine = "";
+            run.flushInput();
+          } else if (char >= " ") {
+            run.inputLine += char;
+            run.write(char);
+          }
+        }
+      }
+    };
+
+    runTerminal = vscode.window.createTerminal({
+      name: "Run: " + (fileName || "Python"),
+      pty,
+      isTransient: true
+    });
+  }
+
+  runTerminal.show(true);
   write("\x1b[2J\x1b[H");
-  progress.report({ message: "Pyodide betöltése…" });
+
+  let finishStartupProgress;
+  let startupProgressReporter;
+  const startupProgressDone = new Promise(resolve => {
+    finishStartupProgress = resolve;
+  });
+  const startupProgress = vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: "Pyodide" },
+    async progress => {
+      startupProgressReporter = progress;
+      progress.report({ message: "Pyodide betöltése…" });
+      await startupProgressDone;
+    }
+  );
 
   const workerUrl = vscode.Uri.joinPath(context.extensionUri, "worker.js").toString(true);
   try {
-    const bootstrapUrl = vscode.Uri.joinPath(context.extensionUri, "worker-bootstrap.js").toString(true);
-    worker = new Worker(bootstrapUrl);
     if (!inputBuffer) {
       write("\r\n[Input hiba] A böngésző nem cross-origin isolated, ezért az interaktív input nem használható.\r\n");
-      worker.terminate();
+      finishStartupProgress();
       return;
     }
-    worker.postMessage({ type: "load", url: workerUrl, inputBuffer });
+
+    // Keep one Pyodide worker alive between runs. worker.js starts loading
+    // Pyodide immediately at worker startup, so creating a new worker for
+    // every Run can race CDN/IndexedDB loading and intermittently fail.
+    if (!pythonWorker) {
+      pythonWorker = await createPythonWorker(workerUrl);
+      pythonWorkerReady = false;
+    }
+
+    worker = pythonWorker;
+    activeRun.worker = worker;
+    worker.postMessage({ type: "init", inputBuffer });
   } catch (error) {
     write("\r\n[Worker hiba] " + (error?.stack || error?.message || String(error)) + "\r\n");
     return;
@@ -240,18 +462,53 @@ async function executeInteractive(context, code, fileName) {
 
   await new Promise(resolve => {
     const finish = () => resolve();
-    const previousMessage = worker.onmessage;
     worker.onmessage = event => {
       const message = event.data || {};
       if (message.type === "status") {
-        progress.report({ message: message.text });
+        if (message.text) startupProgressReporter?.report({ message: message.text });
+        return;
+      }
+      if (message.ready) {
+        pythonWorkerReady = true;
+        (async () => {
+          try {
+            const files = await collectPythonWorkspace();
+            worker.postMessage({ type: "syncFiles", files });
+          } catch (error) {
+            write("\r\n[Workspace sync hiba] " + (error?.message || String(error)) + "\r\n");
+            worker.postMessage({ type: "syncFiles", files: [] });
+          }
+        })();
+        return;
+      }
+      if (message.type === "syncReady") {
+        finishStartupProgress();
+        worker.postMessage({ type: "runInteractive", code, filePath, inputBuffer });
         return;
       }
       if (message.type === "done") {
-        if (message.ok) write("\r\n[Process exited with code 0]\r\n");
-        else write("\r\n" + message.error + "\r\n[Process exited with code 1]\r\n");
-        worker.terminate();
-        finish();
+        if (activeRun?.worker === worker) activeRun.finished = true;
+        if (message.ok) write("\r\n[Process exited with 0]\r\n");
+        else write("\r\n" + message.error + "\r\n[Process exited with 1]\r\n");
+        worker.postMessage({ type: "snapshotWorkspace" });
+        return;
+      }
+      if (message.type === "workspaceSnapshot") {
+        (async () => {
+          if (message.error) {
+            write("\r\n[Workspace sync hiba] " + message.error + "\r\n");
+          } else {
+            try {
+              await syncWorkspaceFromPython(message.entries);
+            } catch (error) {
+              write("\r\n[Workspace sync hiba] " + (error?.stack || error?.message || String(error)) + "\r\n");
+            }
+          }
+          // Keep the worker alive so the next Run reuses the already
+          // initialized Pyodide runtime instead of loading worker.js/Pyodide again.
+          if (activeRun?.worker === worker) activeRun.worker = worker;
+          finish();
+        })();
         return;
       }
       if (message.type === "output") {
@@ -262,26 +519,59 @@ async function executeInteractive(context, code, fileName) {
       }
     };
     worker.onerror = event => {
+      pythonWorker = null;
+      pythonWorkerReady = false;
+      if (pythonWorkerBlobUrl) {
+      URL.revokeObjectURL(pythonWorkerBlobUrl);
+      pythonWorkerBlobUrl = null;
+    }
+    if (activeRun?.worker === worker) activeRun.worker = null;
+      finishStartupProgress();
       write("\r\n[Worker hiba] " + (event.message || "ismeretlen hiba") + "\r\n");
       finish();
     };
     worker.onmessageerror = () => {
+      pythonWorker = null;
+      pythonWorkerReady = false;
+      if (pythonWorkerBlobUrl) {
+      URL.revokeObjectURL(pythonWorkerBlobUrl);
+      pythonWorkerBlobUrl = null;
+    }
+    if (activeRun?.worker === worker) activeRun.worker = null;
+      finishStartupProgress();
       write("\r\n[Worker üzenethiba]\r\n");
       finish();
     };
-    worker.postMessage({ type: "runInteractive", code });
-  });
+
+    // A reused worker has already emitted its one-time ready message.
+    // Start the per-run workspace sync explicitly in that case.
+    if (pythonWorkerReady) {
+      (async () => {
+        try {
+          const files = await collectPythonWorkspace();
+          worker.postMessage({ type: "syncFiles", files });
+        } catch (error) {
+          write("\r\n[Workspace sync hiba] " + (error?.message || String(error)) + "\r\n");
+          worker.postMessage({ type: "syncFiles", files: [] });
+        }
+      })();
     }
-  );
+  });
+  await startupProgress;
 }
 
 async function activate(context) {
+  // Start the worker immediately when the extension activates. The worker
+  // loads Pyodide in the background and stays alive for subsequent Runs.
+  void warmupPythonWorker(context);
+
   context.subscriptions.push(
     vscode.commands.registerCommand("pythonline.runPythonFile", async () => {
       try {
         const editor = vscode.window.activeTextEditor;
         if (!editor) throw new Error("Nincs megnyitott Python fájl.");
-        await executeInteractive(context, editor.document.getText(), editor.document.fileName.split("/").pop());
+        await vscode.workspace.saveAll();
+        await executeInteractive(context, editor.document.getText(), editor.document.fileName.split("/").pop(), editor.document.uri.path);
       } catch (error) {
         vscode.window.showErrorMessage("Python futtatási hiba: " + error.message);
       }
@@ -296,7 +586,7 @@ async function activate(context) {
       try {
         const editor = vscode.window.activeTextEditor;
         if (!editor || editor.selection.isEmpty) throw new Error("Jelölj ki egy Python kódrészletet.");
-        await executeInteractive(context, editor.document.getText(editor.selection), editor.document.fileName.split("/").pop() + " (selection)");
+        await executeInteractive(context, editor.document.getText(editor.selection), editor.document.fileName.split("/").pop() + " (selection)", editor.document.uri.path);
       } catch (error) {
         vscode.window.showErrorMessage("Python futtatási hiba: " + error.message);
       }

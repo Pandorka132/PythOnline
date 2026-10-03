@@ -33,6 +33,72 @@ async function savePackages(packages) {
   });
 }
 
+const FILESYSTEM_DB = "pythonline-filesystem";
+const FILESYSTEM_STORE = "entries";
+
+function openFilesystemDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(FILESYSTEM_DB, 1);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(FILESYSTEM_STORE)) {
+        request.result.createObjectStore(FILESYSTEM_STORE, { keyPath: "path" });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("Could not open PythOnline filesystem"));
+  });
+}
+
+function loadWorkspaceEntries() {
+  return openFilesystemDb().then(db => new Promise((resolve, reject) => {
+    const request = db.transaction(FILESYSTEM_STORE, "readonly")
+      .objectStore(FILESYSTEM_STORE)
+      .getAll();
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => reject(request.error || new Error("Could not read PythOnline filesystem"));
+  }));
+}
+
+function normalizeWorkspacePath(path) {
+  const raw = String(path || "").replace(/\\/g, "/");
+  return raw.startsWith("/") ? raw : "/" + raw;
+}
+
+async function mountWorkspace(pyodide) {
+  self.postMessage({ type: "status", text: "Workspace betöltése…" });
+  const entries = await loadWorkspaceEntries();
+  self.postMessage({ type: "status", text: "Workspace: " + entries.length + " elem" });
+
+  try {
+    pyodide.FS.mkdirTree("/workspace");
+  } catch {}
+
+  const directories = entries
+    .filter(entry => entry.type === "directory" && entry.path !== "/workspace")
+    .sort((a, b) => a.path.length - b.path.length);
+
+  for (const entry of directories) {
+    try {
+      pyodide.FS.mkdirTree(normalizeWorkspacePath(entry.path));
+    } catch {}
+  }
+
+  for (const entry of entries) {
+    if (entry.type !== "file") continue;
+    const path = normalizeWorkspacePath(entry.path);
+    const parent = path.slice(0, path.lastIndexOf("/")) || "/";
+    try {
+      pyodide.FS.mkdirTree(parent);
+    } catch {}
+    pyodide.FS.writeFile(path, new Uint8Array(entry.data || new ArrayBuffer(0)));
+  }
+
+  pyodide.runPython(
+    "import os, sys; os.chdir('/workspace'); sys.path.insert(0, '/workspace') if '/workspace' not in sys.path else None"
+  );
+  self.postMessage({ type: "status", text: "Workspace kész" });
+}
+
 async function runtime() {
   if (!pyodidePromise) {
     pyodidePromise = (async () => {
@@ -52,6 +118,7 @@ async function runtime() {
           }
         }
       }
+      await mountWorkspace(pyodide);
       return pyodide;
     })();
   }
@@ -103,10 +170,15 @@ function createInteractiveInput() {
   return text;
 }
 
-async function runInteractive(code) {
+async function runInteractive(code, filePath) {
   setupInteractiveInput(self.__pyodideInputBuffer);
+  const scriptPath = normalizeWorkspacePath(filePath || "/workspace");
+  const scriptDir = scriptPath.slice(0, scriptPath.lastIndexOf("/")) || "/workspace";
+  const scriptDirLiteral = JSON.stringify(scriptDir);
   self.postMessage({ type: "status", text: "Pyodide betöltése…" });
   const pyodide = await runtime();
+  pyodide.runPython("import os, sys; os.chdir('/workspace'); sys.path.insert(0, " + scriptDirLiteral + ") if " + scriptDirLiteral + " not in sys.path else None");
+  self.postMessage({ type: "started" });
 
   self.__pyodideInputResolver = null;
   self.__pyodideReadLine = createInteractiveInput;
@@ -158,6 +230,47 @@ builtins.input = _pyodide_input
   }
 }
 
+async function syncFiles(files) {
+  const pyodide = await runtime();
+  for (const file of files || []) {
+    const path = String(file.path || "");
+    if (!path.startsWith("/workspace/") || !path.endsWith(".py")) continue;
+    const parts = path.split("/").filter(Boolean);
+    let current = "";
+    for (let i = 0; i < parts.length - 1; i++) {
+      current += "/" + parts[i];
+      try { pyodide.FS.mkdir(current); } catch {}
+    }
+    pyodide.FS.writeFile(path, new Uint8Array(file.bytes || []));
+  }
+  pyodide.runPython("import os, sys, importlib; os.chdir('/workspace'); sys.path.insert(0, '/workspace') if '/workspace' not in sys.path else None; importlib.invalidate_caches()");
+}
+
+function collectWorkspaceSnapshot(pyodide) {
+  const entries = [];
+
+  function walk(path) {
+    let stat;
+    try { stat = pyodide.FS.stat(path); } catch { return; }
+
+    if (pyodide.FS.isDir(stat.mode)) {
+      if (path !== "/workspace") entries.push({ path, type: "directory" });
+      for (const name of pyodide.FS.readdir(path)) {
+        if (name === "." || name === "..") continue;
+        walk(path.replace(/\/$/, "") + "/" + name);
+      }
+      return;
+    }
+
+    if (pyodide.FS.isFile(stat.mode)) {
+      entries.push({ path, type: "file", data: Array.from(pyodide.FS.readFile(path)) });
+    }
+  }
+
+  walk("/workspace");
+  return entries;
+}
+
 async function installPackage(spec) {
   const pyodide = await runtime();
   await pyodide.loadPackage("micropip");
@@ -176,8 +289,17 @@ async function listPackages() {
   ));
 }
 
+function initInteractiveInput(buffer) {
+  if (buffer) setupInteractiveInput(buffer);
+}
+
 self.onmessage = async event => {
   const { id, type } = event.data;
+
+  if (type === "init") {
+    initInteractiveInput(event.data.inputBuffer);
+    return;
+  }
 
   if (type === "stdin") {
     const resolver = self.__pyodideInputResolver;
@@ -186,10 +308,33 @@ self.onmessage = async event => {
     return;
   }
 
+  if (type === "syncFiles") {
+    try {
+      await syncFiles(event.data.files);
+      self.postMessage({ type: "syncReady" });
+    } catch (error) {
+      self.postMessage({ type: "syncReady", error: error && error.stack ? error.stack : String(error) });
+    }
+    return;
+  }
+
+  if (type === "snapshotWorkspace") {
+    try {
+      const pyodide = await runtime();
+      self.postMessage({ type: "workspaceSnapshot", entries: collectWorkspaceSnapshot(pyodide) });
+    } catch (error) {
+      self.postMessage({ type: "workspaceSnapshot", error: error && error.stack ? error.stack : String(error) });
+    }
+    return;
+  }
+
   try {
     let result;
     if (type === "run") result = await runPython(event.data.code);
-    else if (type === "runInteractive") result = await runInteractive(event.data.code);
+    else if (type === "runInteractive") {
+      initInteractiveInput(event.data.inputBuffer);
+      result = await runInteractive(event.data.code, event.data.filePath);
+    }
     else if (type === "install") result = await installPackage(event.data.spec);
     else if (type === "version") result = pyodideVersion(await runtime());
     else if (type === "packages") result = await listPackages();

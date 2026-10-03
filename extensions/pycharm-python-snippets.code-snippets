@@ -1,0 +1,128 @@
+{
+  "super": {
+    "prefix": "super",
+    "body": [
+      "super(${1:self}).${2:method}($0)"
+    ],
+    "description": "PyCharm Python live template: super() call"
+  },
+  "main": {
+    "prefix": "main",
+    "body": [
+      "if __name__ == '__main__':",
+      "\t$0"
+    ],
+    "description": "PyCharm Python live template: __main__ guard"
+  },
+  "iter": {
+    "prefix": "iter",
+    "body": [
+      "for ${1:item} in ${2:iterable}:",
+      "\t$0"
+    ],
+    "description": "PyCharm Python live template: iterate"
+  },
+  "itere": {
+    "prefix": ["itere", "fori"],
+    "body": [
+      "for ${1:i}, ${2:item} in enumerate(${3:iterable}):",
+      "\t$0"
+    ],
+    "description": "PyCharm Python live template: enumerate"
+  },
+  "compl": {
+    "prefix": "compl",
+    "body": [
+      "[${1:item} for ${2:item} in ${3:iterable}]$0"
+    ],
+    "description": "PyCharm Python live template: list comprehension"
+  },
+  "compli": {
+    "prefix": "compli",
+    "body": [
+      "[${1:item} for ${2:item} in ${3:iterable} if ${4:item}]$0"
+    ],
+    "description": "PyCharm Python live template: list comprehension with condition"
+  },
+  "compg": {
+    "prefix": "compg",
+    "body": [
+      "(${1:item} for ${2:item} in ${3:iterable})$0"
+    ],
+    "description": "PyCharm Python live template: generator expression"
+  },
+  "compgi": {
+    "prefix": "compgi",
+    "body": [
+      "(${1:item} for ${2:item} in ${3:iterable} if ${4:item})$0"
+    ],
+    "description": "PyCharm Python live template: generator expression with condition"
+  },
+  "comps": {
+    "prefix": "comps",
+    "body": [
+      "{${1:item} for ${2:item} in ${3:iterable}}$0"
+    ],
+    "description": "PyCharm Python live template: set comprehension"
+  },
+  "compsi": {
+    "prefix": "compsi",
+    "body": [
+      "{${1:item} for ${2:item} in ${3:iterable} if ${4:item}}$0"
+    ],
+    "description": "PyCharm Python live template: set comprehension with condition"
+  },
+  "compd": {
+    "prefix": "compd",
+    "body": [
+      "{${1:key}: ${2:value} for ${3:item} in ${4:iterable}}$0"
+    ],
+    "description": "PyCharm Python live template: dict comprehension"
+  },
+  "compdi": {
+    "prefix": "compdi",
+    "body": [
+      "{${1:key}: ${2:value} for ${3:item} in ${4:iterable} if ${5:item}}$0"
+    ],
+    "description": "PyCharm Python live template: dict comprehension with condition"
+  },
+  "prop": {
+    "prefix": "prop",
+    "body": [
+      "@property",
+      "def ${1:name}(self):",
+      "\treturn $0"
+    ],
+    "description": "PyCharm Python live template: property"
+  },
+  "props": {
+    "prefix": "props",
+    "body": [
+      "@property",
+      "def ${1:name}(self):",
+      "\treturn $0",
+      "",
+      "@${1:name}.setter",
+      "def ${1:name}(self, ${2:value}):",
+      "\tpass"
+    ],
+    "description": "PyCharm Python live template: property with setter"
+  },
+  "propsd": {
+    "prefix": "propsd",
+    "body": [
+      "@property",
+      "def ${1:name}(self):",
+      "\treturn $0",
+      "",
+      "@${1:name}.setter",
+      "def ${1:name}(self, ${2:value}):",
+      "\tpass",
+      "",
+      "@${1:name}.deleter",
+      "def ${1:name}(self):",
+      "\tpass"
+    ],
+    "description": "PyCharm Python live template: property with setter and deleter"
+  }
+}
