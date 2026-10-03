@@ -107,7 +107,6 @@ async function runInteractive(code) {
   setupInteractiveInput(self.__pyodideInputBuffer);
   self.postMessage({ type: "status", text: "Pyodide betöltése…" });
   const pyodide = await runtime();
-  self.postMessage({ type: "status", text: "Python program futtatása…" });
 
   self.__pyodideInputResolver = null;
   self.__pyodideReadLine = createInteractiveInput;
