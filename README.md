@@ -3,4 +3,4 @@
 PythOnline is a browser-based Python IDE built on the real VS Code Web / Code - OSS codebase.
 
 ## Use
-py.controlmania.hu [PythOnline](https://py.controlmania.hu).
+Link to the github pages site: [py.controlmania.hu](https://py.controlmania.hu).
