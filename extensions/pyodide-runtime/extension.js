@@ -221,7 +221,7 @@ async function executeInteractive(context, code, fileName) {
   });
   terminal.show(true);
   write("\x1b[2J\x1b[H");
-  progress.report({ message: "Pyodide inicializálása…" });
+  progress.report({ message: "Pyodide betöltése…" });
 
   const workerUrl = vscode.Uri.joinPath(context.extensionUri, "worker.js").toString(true);
   try {
@@ -269,7 +269,6 @@ async function executeInteractive(context, code, fileName) {
       write("\r\n[Worker üzenethiba]\r\n");
       finish();
     };
-    progress.report({ message: "Python program indítása…" });
     worker.postMessage({ type: "runInteractive", code });
   });
     }

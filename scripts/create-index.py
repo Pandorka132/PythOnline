@@ -97,6 +97,12 @@ text = text.replace("<!-- Workbench Auth Session -->", builtin_meta + "\n\n<!-- 
 
 bootstrap = """
 <script nonce="">
+const workspaceQuery = new URLSearchParams(window.location.search);
+if (!workspaceQuery.has('ew') && !workspaceQuery.has('folder') && !workspaceQuery.has('workspace')) {
+    workspaceQuery.set('ew', 'true');
+    window.history.replaceState(null, '', window.location.pathname + '?' + workspaceQuery.toString());
+}
+
 const workbenchConfiguration = document.getElementById('vscode-workbench-web-configuration');
 const configuration = JSON.parse(workbenchConfiguration.getAttribute('data-settings'));
 for (const extension of configuration.additionalBuiltinExtensions ?? []) {
